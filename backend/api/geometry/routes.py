@@ -137,6 +137,97 @@ def update_point(session_id: int, point_id: str):
         return jsonify({"success": False, "message": "Internal server error"}), 500
 
 
+@geometry_bp.post("/api/geometry/<int:session_id>/segment")
+def add_segment(session_id: int):
+    """Add a line segment to the geometry."""
+    try:
+        data = request.json or {}
+        start_x = float(data.get("startX", 0))
+        start_y = float(data.get("startY", 0))
+        end_x = float(data.get("endX", 0))
+        end_y = float(data.get("endY", 0))
+        attributes = data.get("attributes")
+        
+        geometry_service = get_geometry_service()
+        result = geometry_service.add_segment(
+            session_id, start_x, start_y, end_x, end_y, attributes
+        )
+        
+        return jsonify({
+            "success": True,
+            "version": result["version"],
+            "segment": result["segments"][-1] if result.get("segments") else None
+        }), 200
+    except (ValueError, TypeError) as e:
+        return jsonify({"success": False, "message": f"Invalid coordinates: {e}"}), 400
+    except SessionNotFoundError as e:
+        return jsonify({"success": False, "message": str(e)}), 404
+    except GeometryError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error adding segment: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Internal server error"}), 500
+
+
+@geometry_bp.put("/api/geometry/<int:session_id>/segment/<segment_id>")
+def update_segment(session_id: int, segment_id: str):
+    """Update a segment in the geometry."""
+    try:
+        data = request.json or {}
+        current_app.logger.info(f"Updating segment {segment_id} in session {session_id} with data: {data}")
+        
+        start_x = data.get("startX")
+        start_y = data.get("startY")
+        end_x = data.get("endX")
+        end_y = data.get("endY")
+        layer = data.get("layer")
+        attributes = data.get("attributes")
+        
+        # Validate that coordinates are provided
+        if start_x is None or start_y is None or end_x is None or end_y is None:
+            return jsonify({"success": False, "message": "All coordinates must be provided"}), 400
+        
+        geometry_service = get_geometry_service()
+        
+        # Convert to float
+        try:
+            start_x_float = float(start_x)
+            start_y_float = float(start_y)
+            end_x_float = float(end_x)
+            end_y_float = float(end_y)
+        except (ValueError, TypeError) as e:
+            return jsonify({"success": False, "message": f"Invalid coordinates: {e}"}), 400
+        
+        result = geometry_service.update_segment(
+            session_id,
+            segment_id,
+            start_x=start_x_float,
+            start_y=start_y_float,
+            end_x=end_x_float,
+            end_y=end_y_float,
+            layer=layer,
+            attributes=attributes
+        )
+        
+        current_app.logger.info(f"Segment {segment_id} updated successfully, new version: {result['version']}")
+        
+        return jsonify({
+            "success": True,
+            "version": result["version"]
+        }), 200
+    except (ValueError, TypeError) as e:
+        return jsonify({"success": False, "message": f"Invalid data: {e}"}), 400
+    except SessionNotFoundError as e:
+        return jsonify({"success": False, "message": str(e)}), 404
+    except GeometryNotFoundError as e:
+        return jsonify({"success": False, "message": str(e)}), 404
+    except GeometryError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error updating segment: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Internal server error"}), 500
+
+
 @geometry_bp.post("/api/geometry/<int:session_id>/undo")
 def undo_action(session_id: int):
     """Undo last action."""

@@ -6,6 +6,52 @@ import "./style.css";
 
 console.log("=== DRAFTER MODULE LOADING ===");
 
+// Utility functions for calculating segment properties
+function calculateQuadrant(dx, dy) {
+  if (dx >= 0 && dy >= 0) return "NE";
+  if (dx < 0 && dy >= 0) return "NW";
+  if (dx < 0 && dy < 0) return "SW";
+  if (dx >= 0 && dy < 0) return "SE";
+  return "NE";
+}
+
+function calculateBearing(dx, dy) {
+  // Calculate angle in radians from positive X axis (east)
+  let angle = Math.atan2(dy, dx);
+  
+  // Convert to degrees (0-360, where 0 is east, 90 is north, 180 is west, 270 is south)
+  let degrees = angle * (180 / Math.PI);
+  
+  // Normalize to 0-360 range
+  if (degrees < 0) {
+    degrees += 360;
+  }
+  
+  // Convert from mathematical angle (0 = east, counterclockwise) to bearing (0 = north, clockwise)
+  // Mathematical: 0° = East, 90° = North, 180° = West, 270° = South
+  // Bearing: 0° = North, 90° = East, 180° = South, 270° = West
+  // Formula: bearing = 90 - angle (then normalize to 0-360)
+  degrees = 90 - degrees;
+  if (degrees < 0) {
+    degrees += 360;
+  }
+  
+  // Convert to D*MM'SS.SS" format
+  const d = Math.floor(degrees);
+  const minutes = (degrees - d) * 60;
+  const m = Math.floor(minutes);
+  const seconds = (minutes - m) * 60;
+  const s = seconds.toFixed(2);
+  
+  return `${d}*${String(m).padStart(2, '0')}'${String(s).padStart(5, '0')}"`;
+}
+
+function calculateDistanceFeet(dx, dy) {
+  // Calculate distance in feet (assuming coordinates are already in feet)
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  return distance.toFixed(4);
+}
+
 let geometryViewer = null;
 let propertyEditor = null;
 let referenceLineActive = false;
@@ -209,6 +255,18 @@ function initializeGeometryViewer() {
   // Setup object click handler
   geometryViewer.onObjectClick = (object, position) => {
     console.log("Object clicked:", object, position);
+    
+    // If it's a segment, calculate properties if they're missing
+    if (object.type === "segment") {
+      if (!object.quadrant || !object.bearing || !object.distance) {
+        const dx = object.endX - object.startX;
+        const dy = object.endY - object.startY;
+        object.quadrant = calculateQuadrant(dx, dy);
+        object.bearing = calculateBearing(dx, dy);
+        object.distance = calculateDistanceFeet(dx, dy);
+      }
+    }
+    
     propertyEditor.show(
       object,
       position,
@@ -322,6 +380,80 @@ async function handleObjectUpdate(values) {
     } catch (error) {
       console.error("Error updating point:", error);
       alert("An error occurred while updating the point: " + error.message);
+    }
+  } else if (values && values.type === "segment") {
+    try {
+      // Prepare update data
+      const updateData = {
+        startX: values.startX,
+        startY: values.startY,
+        endX: values.endX,
+        endY: values.endY,
+        layer: values.layer || ""
+      };
+
+      console.log("handleObjectUpdate called with segment values:", values);
+      console.log("Sending update request:", { 
+        url: `/api/geometry/${sessionId}/segment/${values.id}`,
+        method: "PUT",
+        data: updateData 
+      });
+
+      const response = await fetch(`/api/geometry/${sessionId}/segment/${values.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(updateData)
+      });
+
+      console.log("Update response status:", response.status, response.statusText);
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Segment updated successfully on server:", result);
+        
+        // Reload geometry to show updated segment, but preserve view
+        if (geometryViewer) {
+          try {
+            console.log("Reloading geometry from server...");
+            const reloadResponse = await fetch(`/api/geometry/${sessionId}`);
+            if (reloadResponse.ok) {
+              const data = await reloadResponse.json();
+              console.log("Geometry reloaded from server, segments:", data.segments);
+              geometryViewer.loadData(data, true);
+              console.log("Geometry loaded into viewer, rendering...");
+              geometryViewer.render();
+              console.log("Render complete, changes should be visible now");
+              
+              // Close property editor after successful update
+              if (propertyEditor) {
+                propertyEditor.hide();
+              }
+            } else {
+              const errorText = await reloadResponse.text();
+              console.error("Failed to reload geometry:", reloadResponse.status, errorText);
+            }
+          } catch (error) {
+            console.error("Error reloading geometry:", error);
+          }
+        } else {
+          console.error("GeometryViewer is not available");
+        }
+      } else {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          errorData = { message: errorText || "Unknown error" };
+        }
+        console.error("Failed to update segment:", response.status, errorData);
+        alert(`Failed to update segment: ${errorData.message || "Unknown error"}`);
+      }
+    } catch (error) {
+      console.error("Error updating segment:", error);
+      alert("An unexpected error occurred while updating the segment.");
     }
   } else {
     console.error("Invalid values for update:", values);
@@ -797,6 +929,93 @@ function setupDrawingControls() {
     savePoint(x, y);
   };
   
+  // Save segment to server
+  const saveSegment = async (startX, startY, endX, endY) => {
+    const sessionId = getSessionId();
+    if (!sessionId) {
+      console.error("No session ID available");
+      return;
+    }
+    
+    try {
+      const response = await fetch(`/api/geometry/${sessionId}/segment`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          startX: startX,
+          startY: startY,
+          endX: endX,
+          endY: endY
+        })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Segment saved successfully:", result);
+        
+        // Reload geometry to show new segment, but preserve view
+        const data = await loadGeometry(true);
+        if (data && data.segments && data.segments.length > 0) {
+          const newSegment = data.segments[data.segments.length - 1];
+          
+          // Calculate properties
+          const dx = endX - startX;
+          const dy = endY - startY;
+          const quadrant = calculateQuadrant(dx, dy);
+          const bearing = calculateBearing(dx, dy);
+          const distance = calculateDistanceFeet(dx, dy);
+          
+          // Open property editor with segment properties
+          if (propertyEditor && geometryViewer) {
+            const canvasPos = geometryViewer.worldToCanvas(endX, endY);
+            const containerRect = document.getElementById("geometry-viewer").getBoundingClientRect();
+            const position = {
+              x: containerRect.left + canvasPos.x,
+              y: containerRect.top + canvasPos.y
+            };
+            
+            propertyEditor.show(
+              {
+                type: "segment",
+                id: newSegment.id,
+                startX: startX,
+                startY: startY,
+                endX: endX,
+                endY: endY,
+                quadrant: quadrant,
+                bearing: bearing,
+                distance: distance,
+                layer: newSegment.layer || ""
+              },
+              position,
+              (values) => {
+                // Save handler - segment properties are read-only for now
+                console.log("Segment properties updated:", values);
+              },
+              () => {
+                // Cancel handler
+                console.log("Property editor cancelled");
+              }
+            );
+          }
+        }
+      } else {
+        const errorText = await response.text();
+        console.error("Failed to save segment:", response.status, errorText);
+      }
+    } catch (error) {
+      console.error("Error saving segment:", error);
+    }
+  };
+  
+  // Handle segment click (two points)
+  const handleSegmentClick = (startX, startY, endX, endY, canvasX, canvasY) => {
+    console.log(`Segment: start (${startX.toFixed(3)}, ${startY.toFixed(3)}), end (${endX.toFixed(3)}, ${endY.toFixed(3)})`);
+    saveSegment(startX, startY, endX, endY);
+  };
+  
   // Update button states
   const updateButtonStates = (activeMode) => {
     console.log(`updateButtonStates called with activeMode: ${activeMode}`);
@@ -831,6 +1050,10 @@ function setupDrawingControls() {
       if (mode === "points") {
         console.log("Setting geometryViewer to points mode");
         geometryViewer.setDrawingMode("points", handlePointClick);
+      } else if (mode === "segments") {
+        console.log("Setting geometryViewer to segments mode");
+        console.log("handleSegmentClick type:", typeof handleSegmentClick, handleSegmentClick);
+        geometryViewer.setDrawingMode("segments", handleSegmentClick);
       } else if (mode === "cursor" || mode === null) {
         console.log("Setting geometryViewer to cursor mode (null)");
         geometryViewer.setDrawingMode(null);

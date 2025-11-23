@@ -53,6 +53,7 @@ class GeometryService:
                     "previousVersionFile": None
                 },
                 "points": [],
+                "segments": [],
                 "geometryLayers": []
             }
         
@@ -173,6 +174,104 @@ class GeometryService:
         
         # Save with versioning
         return self.save_geometry(session_id, current_geometry, action="update_point")
+
+    def add_segment(
+        self,
+        session_id: int,
+        start_x: float,
+        start_y: float,
+        end_x: float,
+        end_y: float,
+        attributes: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Add a line segment to the geometry."""
+        current_geometry = self.load_current_geometry(session_id)
+        
+        if "segments" not in current_geometry:
+            current_geometry["segments"] = []
+        
+        # Generate unique ID for segment
+        segment_id = str(uuid.uuid4())
+        
+        # Calculate length
+        dx = end_x - start_x
+        dy = end_y - start_y
+        length = (dx ** 2 + dy ** 2) ** 0.5
+        
+        # Create segment
+        segment_attributes = attributes or {}
+        new_segment = {
+            "id": segment_id,
+            "segmentType": "line",
+            "start": {
+                "x": float(start_x),
+                "y": float(start_y)
+            },
+            "end": {
+                "x": float(end_x),
+                "y": float(end_y)
+            },
+            "length": float(length),
+            "layer": segment_attributes.get("layer", ""),
+            "attributes": segment_attributes
+        }
+        
+        current_geometry["segments"].append(new_segment)
+        
+        # Save with versioning
+        return self.save_geometry(session_id, current_geometry, action="add_segment")
+
+    def update_segment(
+        self,
+        session_id: int,
+        segment_id: str,
+        start_x: float,
+        start_y: float,
+        end_x: float,
+        end_y: float,
+        layer: Optional[str] = None,
+        attributes: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Update a segment in the geometry."""
+        current_geometry = self.load_current_geometry(session_id)
+        
+        if "segments" not in current_geometry:
+            raise GeometryError("No segments found in geometry")
+        
+        # Find and update segment
+        segment_found = False
+        for segment in current_geometry["segments"]:
+            if segment.get("id") == segment_id:
+                segment_found = True
+                # Update coordinates
+                segment["start"] = {
+                    "x": float(start_x),
+                    "y": float(start_y)
+                }
+                segment["end"] = {
+                    "x": float(end_x),
+                    "y": float(end_y)
+                }
+                
+                # Recalculate length
+                dx = end_x - start_x
+                dy = end_y - start_y
+                segment["length"] = float((dx ** 2 + dy ** 2) ** 0.5)
+                
+                # Update layer if provided
+                if layer is not None:
+                    segment["layer"] = str(layer)
+                
+                # Update attributes if provided
+                if attributes is not None:
+                    segment["attributes"] = {**segment.get("attributes", {}), **attributes}
+                break
+        
+        if not segment_found:
+            raise GeometryNotFoundError(f"Segment with id {segment_id} not found")
+        
+        # Save with versioning
+        return self.save_geometry(session_id, current_geometry, action="update_segment")
 
     def undo(self, session_id: int) -> Dict[str, Any]:
         """Undo last action by loading previous version."""

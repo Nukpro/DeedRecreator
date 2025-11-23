@@ -39,7 +39,9 @@ export default class GeometryViewer {
     // Drawing mode state
     this.drawingMode = null; // "points", "segments", "arcs", etc.
     this.onPointClick = null; // Callback for point clicks
+    this.onSegmentClick = null; // Callback for segment clicks (two points)
     this.onObjectClick = null; // Callback for object clicks (cursor mode)
+    this.segmentStartPoint = null; // First point for segment drawing
 
     this.init();
   }
@@ -251,6 +253,23 @@ export default class GeometryViewer {
       });
     }
     
+    // Render segments if they exist in data
+    if (this.data && this.data.segments && Array.isArray(this.data.segments)) {
+      this.data.segments.forEach((segment) => {
+        if (segment.segmentType === "line" && segment.start && segment.end) {
+          const startCanvas = this.worldToCanvas(segment.start.x, segment.start.y);
+          const endCanvas = this.worldToCanvas(segment.end.x, segment.end.y);
+          
+          this.ctx.beginPath();
+          this.ctx.moveTo(startCanvas.x, startCanvas.y);
+          this.ctx.lineTo(endCanvas.x, endCanvas.y);
+          this.ctx.strokeStyle = segment.attributes?.color || "#0000ff";
+          this.ctx.lineWidth = 2;
+          this.ctx.stroke();
+        }
+      });
+    }
+    
     // Render points if they exist in data
     if (this.data && this.data.points && Array.isArray(this.data.points)) {
       this.data.points.forEach((point) => {
@@ -379,6 +398,38 @@ export default class GeometryViewer {
       return;
     }
     
+    // If in segments mode, handle two-point selection
+    if (this.drawingMode === "segments") {
+      console.log("onMouseDown: segments mode detected, onSegmentClick:", typeof this.onSegmentClick, !!this.onSegmentClick);
+      if (this.onSegmentClick) {
+        event.preventDefault();
+        event.stopPropagation();
+        
+        if (!this.segmentStartPoint) {
+          // First point - store it
+          this.segmentStartPoint = { x: worldPoint.x, y: worldPoint.y };
+          console.log("Segment start point selected:", this.segmentStartPoint);
+      } else {
+        // Second point - create segment
+        const endPoint = { x: worldPoint.x, y: worldPoint.y };
+        console.log("Segment end point selected:", endPoint);
+        this.onSegmentClick(
+          this.segmentStartPoint.x,
+          this.segmentStartPoint.y,
+          endPoint.x,
+          endPoint.y,
+          canvasX,
+          canvasY
+        );
+          // Reset for next segment
+          this.segmentStartPoint = null;
+        }
+        return;
+      } else {
+        console.warn("onMouseDown: segments mode but onSegmentClick is not set!");
+      }
+    }
+    
     // If in cursor mode, check for object clicks
     if (this.drawingMode === null && this.onObjectClick) {
       const clickedObject = this.findObjectAtPoint(worldPoint.x, worldPoint.y, canvasX, canvasY);
@@ -401,10 +452,10 @@ export default class GeometryViewer {
   }
 
   findObjectAtPoint(worldX, worldY, canvasX, canvasY) {
+    const clickTolerance = 8; // pixels
+    
     // Check points first
     if (this.data && this.data.points && Array.isArray(this.data.points)) {
-      const clickTolerance = 8; // pixels
-      
       for (const point of this.data.points) {
         if (point.x !== undefined && point.y !== undefined) {
           const pointCanvasPos = this.worldToCanvas(point.x, point.y);
@@ -427,6 +478,58 @@ export default class GeometryViewer {
       }
     }
     
+    // Check segments
+    if (this.data && this.data.segments && Array.isArray(this.data.segments)) {
+      for (const segment of this.data.segments) {
+        if (segment.segmentType === "line" && segment.start && segment.end) {
+          const startCanvas = this.worldToCanvas(segment.start.x, segment.start.y);
+          const endCanvas = this.worldToCanvas(segment.end.x, segment.end.y);
+          
+          // Calculate distance from point to line segment
+          const A = canvasX - startCanvas.x;
+          const B = canvasY - startCanvas.y;
+          const C = endCanvas.x - startCanvas.x;
+          const D = endCanvas.y - startCanvas.y;
+          
+          const dot = A * C + B * D;
+          const lenSq = C * C + D * D;
+          let param = -1;
+          if (lenSq !== 0) {
+            param = dot / lenSq;
+          }
+          
+          let xx, yy;
+          if (param < 0) {
+            xx = startCanvas.x;
+            yy = startCanvas.y;
+          } else if (param > 1) {
+            xx = endCanvas.x;
+            yy = endCanvas.y;
+          } else {
+            xx = startCanvas.x + param * C;
+            yy = startCanvas.y + param * D;
+          }
+          
+          const dx = canvasX - xx;
+          const dy = canvasY - yy;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance <= clickTolerance) {
+            return {
+              type: "segment",
+              id: segment.id,
+              startX: segment.start.x,
+              startY: segment.start.y,
+              endX: segment.end.x,
+              endY: segment.end.y,
+              layer: segment.layer || "",
+              ...segment
+            };
+          }
+        }
+      }
+    }
+    
     return null;
   }
 
@@ -443,8 +546,8 @@ export default class GeometryViewer {
 
       this.lastPanPoint = { x: currentX, y: currentY };
       this.render();
-    } else if (this.drawingMode === "points") {
-      // Ensure crosshair cursor is maintained when not panning in points mode
+    } else if (this.drawingMode === "points" || this.drawingMode === "segments") {
+      // Ensure crosshair cursor is maintained when not panning in drawing modes
       this.canvas.style.cursor = "crosshair";
     }
   }
@@ -452,7 +555,7 @@ export default class GeometryViewer {
   onMouseUp() {
     this.isPanning = false;
     // Keep crosshair cursor if in drawing mode
-    if (this.drawingMode === "points") {
+    if (this.drawingMode === "points" || this.drawingMode === "segments") {
       this.canvas.style.cursor = "crosshair";
     } else {
       this.canvas.style.cursor = "grab";
@@ -462,7 +565,7 @@ export default class GeometryViewer {
   onMouseLeave() {
     this.isPanning = false;
     // Keep crosshair cursor if in drawing mode
-    if (this.drawingMode === "points") {
+    if (this.drawingMode === "points" || this.drawingMode === "segments") {
       this.canvas.style.cursor = "crosshair";
     } else {
       this.canvas.style.cursor = "grab";
@@ -526,7 +629,7 @@ export default class GeometryViewer {
   onTouchEnd() {
     this.isPanning = false;
     // Keep crosshair cursor if in drawing mode
-    if (this.drawingMode === "points") {
+    if (this.drawingMode === "points" || this.drawingMode === "segments") {
       this.canvas.style.cursor = "crosshair";
     } else {
       this.canvas.style.cursor = "grab";
@@ -641,10 +744,27 @@ export default class GeometryViewer {
   setDrawingMode(mode, callback = null) {
     // Set drawing mode and callback for clicks
     this.drawingMode = mode;
-    this.onPointClick = callback;
+    
+    // Reset segment start point when changing modes
+    if (mode !== "segments") {
+      this.segmentStartPoint = null;
+    }
+    
+    // Set appropriate callback based on mode
+    if (mode === "points") {
+      this.onPointClick = callback;
+      this.onSegmentClick = null;
+    } else if (mode === "segments") {
+      this.onPointClick = null;
+      this.onSegmentClick = callback;
+      console.log("setDrawingMode: segments mode set, onSegmentClick:", typeof this.onSegmentClick, this.onSegmentClick);
+    } else {
+      this.onPointClick = null;
+      this.onSegmentClick = null;
+    }
     
     // Update cursor based on mode
-    if (mode === "points") {
+    if (mode === "points" || mode === "segments") {
       this.canvas.style.cursor = "crosshair";
     } else if (mode === null) {
       this.canvas.style.cursor = "grab";
