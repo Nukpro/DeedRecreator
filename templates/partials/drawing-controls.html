@@ -1,0 +1,54 @@
+{# Drawing control buttons block - import where toolbar is required #}
+<div class="drawing-controls" role="toolbar" aria-label="Drawing controls">
+    <button
+        class="drawing-btn"
+        type="button"
+        data-mode="cursor"
+        data-state="active"
+        aria-pressed="true"
+        title="Toggle cursor mode">
+        <span class="drawing-btn__icon" aria-hidden="true">➤</span>
+        <span class="drawing-btn__label">Cursor</span>
+    </button>
+    <button
+        class="drawing-btn"
+        type="button"
+        data-mode="points"
+        data-state="inactive"
+        aria-pressed="false"
+        title="Draw points">
+        <span class="drawing-btn__icon" aria-hidden="true">•</span>
+        <span class="drawing-btn__label">Point</span>
+    </button>
+    <button
+        class="drawing-btn"
+        type="button"
+        data-mode="segments"
+        data-state="inactive"
+        aria-pressed="false"
+        title="Draw segments">
+        <span class="drawing-btn__icon" aria-hidden="true">━</span>
+        <span class="drawing-btn__label">PLine</span>
+    </button>
+    <button
+        class="drawing-btn"
+        type="button"
+        data-mode="arcs"
+        data-state="inactive"
+        aria-pressed="false"
+        title="Draw arc segments">
+        <span class="drawing-btn__icon" aria-hidden="true">⌒</span>
+        <span class="drawing-btn__label">Arc</span>
+    </button>
+    <button
+        class="drawing-btn"
+        type="button"
+        data-mode="delete"
+        data-state="inactive"
+        aria-pressed="false"
+        title="Delete geometries">
+        <span class="drawing-btn__icon" aria-hidden="true">×</span>
+        <span class="drawing-btn__label">Del</span>
+    </button>
+</div>
+

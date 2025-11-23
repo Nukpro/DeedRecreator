@@ -1,0 +1,85 @@
+<?xml version="1.0"?>
+<LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.landxml.org/schema/LandXML-1.2 http://www.landxml.org/schema/LandXML-1.2/LandXML-1.2.xsd" date="2025-11-20" time="13:13:25" version="1.2" language="English" readOnly="false">
+	<Units>
+		<Imperial areaUnit="squareFoot" linearUnit="foot" volumeUnit="cubicYard" temperatureUnit="fahrenheit" pressureUnit="inchHG" diameterUnit="inch" angularUnit="decimal degrees" directionUnit="decimal degrees"></Imperial>
+	</Units>
+	<Project name="C:\Users\nprokhor\AppData\Roaming\Autodesk\C3D 2025\enu\Template\_Autodesk Civil 3D (Imperial) NCS.dwt"></Project>
+	<Application name="Autodesk Civil 3D" desc="Civil 3D" manufacturer="Autodesk, Inc." version="2025" manufacturerURL="www.autodesk.com/civil" timeStamp="2025-11-20T13:13:25"></Application>
+	<Alignments name=""></Alignments>
+	<Alignments name="Site">
+		<Alignment name="Alignment - (2)" length="87.54509121576" staStart="0." desc="">
+			<CoordGeom>
+				<Line dir="73.257911181399" length="17.29510524884">
+					<Start>-11.216030451873 13.910407875388</Start>
+					<End>5.345955083376 18.892505897173</End>
+				</Line>
+				<Line dir="22.808409434694" length="11.492221828693">
+					<Start>5.345955083376 18.892505897173</Start>
+					<End>9.800925060532 29.486107978737</End>
+				</Line>
+				<Line dir="335.319285354051" length="12.928316635028">
+					<Start>9.800925060532 29.486107978737</Start>
+					<End>4.402560970973 41.233407079897</End>
+				</Line>
+				<Line dir="256.667704952575" length="14.327570190305">
+					<Start>4.402560970973 41.233407079897</Start>
+					<End>-9.538867584739 37.929494643999</End>
+				</Line>
+				<Curve rot="ccw" chord="10.685016064604" crvType="arc" delta="68.224189675656" dirEnd="229.536026447338" dirStart="161.311836771682" external="1.979709921427" length="11.343374230367" midOrd="1.63908492887" radius="9.526349406674" tangent="6.452756639123">
+					<Start>-9.538867584739 37.929494643999</Start>
+					<Center>-18.56295444345 34.877087498077</Center>
+					<End>-12.380641452195 27.629305830822</End>
+					<PI>-7.471292731527 31.81694996358</PI>
+				</Curve>
+				<Line dir="252.656082785893" length="6.309512813003">
+					<Start>-12.380641452195 27.629305830822</Start>
+					<End>-18.403277003814 25.748398350421</End>
+				</Line>
+				<Line dir="148.7366389494" length="13.848990269523">
+					<Start>-18.403277003814 25.748398350421</Start>
+					<End>-11.216030451873 13.910407875388</End>
+				</Line>
+			</CoordGeom>
+			<Feature name="SpeedStation" code="0" source="Autodesk Civil 3D">
+				<Property label="station" value="0.00000000"></Property>
+				<Property label="speed" value="60.00000000"></Property>
+			</Feature>
+		</Alignment>
+	</Alignments>
+	<Parcels name="Site">
+		<Parcel name="Property : 1" area="462.780850607333" desc="">
+			<CoordGeom>
+				<Line dir="148.736638950808" length="13.848990269691">
+					<Start>-18.403277003672 25.748398350552</Start>
+					<End>-11.216030451935 13.910407875199</End>
+				</Line>
+				<Line dir="73.257911180524" length="17.295105248745">
+					<Start>-11.216030451935 13.910407875199</Start>
+					<End>5.345955083147 18.892505897209</End>
+				</Line>
+				<Line dir="22.808409435869" length="11.492221829005">
+					<Start>5.345955083147 18.892505897209</Start>
+					<End>9.800925060641 29.48610797897</End>
+				</Line>
+				<Line dir="335.319285351915" length="12.928316634785">
+					<Start>9.800925060641 29.48610797897</Start>
+					<End>4.402560970746 41.233407079708</End>
+				</Line>
+				<Line dir="256.667704953444" length="14.32757019018">
+					<Start>4.402560970746 41.233407079708</Start>
+					<End>-9.538867584895 37.92949464405</End>
+				</Line>
+				<Curve rot="ccw" chord="10.685016064696" crvType="arc" delta="68.224189675656" dirEnd="229.536026445452" dirStart="161.311836769796" external="1.979709921444" length="11.343374230465" midOrd="1.639084928884" radius="9.526349406756" tangent="6.452756639179">
+					<Start>-9.538867584895 37.92949464405</Start>
+					<Center>-18.562954443584 34.877087497805</Center>
+					<End>-12.380641452037 27.629305830691</End>
+					<PI>-7.471292731464 31.816949963646</PI>
+				</Curve>
+				<Line dir="252.656082788208" length="6.309512812941">
+					<Start>-12.380641452037 27.629305830691</Start>
+					<End>-18.403277003672 25.748398350552</End>
+				</Line>
+			</CoordGeom>
+		</Parcel>
+	</Parcels>
+</LandXML>

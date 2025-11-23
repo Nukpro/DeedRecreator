@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+
+{% block title %}Drafter Workspace{% endblock %}
+
+{% block extra_head %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='dist/drafter.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/drawing-controls.css') }}">
+{% endblock %}
+
+{% block content %}
+    <div class="workspace">
+        <section class="geometry-pane">
+            <div class="geometry-header">
+                <div class="geometry-header__info">
+                    <h2>Drafter</h2>
+                    <button class="btn btn-secondary" type="button" id="fit-to-view">Fit to View</button>
+                </div>
+                {% include 'partials/drawing-controls.html' %}
+            </div>
+            <div class="geometry-viewer-wrapper">
+                <div id="geometry-viewer" class="geometry-viewer-container">
+                    <div class="geometry-viewer-controls">
+                        <button class="geometry-viewer-btn" type="button" id="control-fit-to-view" title="Fit to View">⌂</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <aside class="tools-pane">
+            <h2>Tools Panel</h2>
+            <section class="tool-block" id="tool-upload-block">
+                <div class="tool-block-header">
+                    <h3>Document Upload
+                        <span class="info-icon" tabindex="0" aria-label="Document Upload details">
+                            i
+                            <span class="info-tooltip">Select a PDF or raster image to store for further processing. Formats: pdf, jpg, jpeg, png, tif.</span>
+                        </span>
+                    </h3>
+                    <button
+                        class="tool-block-toggle"
+                        type="button"
+                        aria-expanded="true"
+                        aria-controls="tool-upload-block-content"
+                        title="Collapse Document Upload section">
+                        <span class="visually-hidden">Toggle Document Upload section</span>
+                    </button>
+                </div>
+                <div class="tool-block-content" id="tool-upload-block-content">
+                    <form id="upload-form">
+                        <div class="upload-dropzone" id="upload-dropzone">
+                            <p>Drag & drop or click to browse.</p>
+                            <input
+                                type="file"
+                                id="document-input"
+                                name="document"
+                                accept=".pdf,image/jpeg,image/png,image/tif,image/tiff"
+                                class="hidden">
+                        </div>
+                        <button class="btn" type="submit" style="width: 100%;">Process Document</button>
+                    </form>
+                    <div class="upload-status hidden" id="upload-status"></div>
+                </div>
+            </section>
+
+            <section class="tool-block collapsed" id="tool-alignment-block">
+                <div class="tool-block-header">
+                    <h3>Image Alignment</h3>
+                    <button
+                        class="tool-block-toggle"
+                        type="button"
+                        aria-expanded="true"
+                        aria-controls="tool-alignment-block-content"
+                        title="Collapse Image Alignment section">
+                        <span class="visually-hidden">Toggle Image Alignment section</span>
+                    </button>
+                </div>
+                <div class="tool-block-content" id="tool-alignment-block-content">
+                    <div class="form-group">
+                        <label>Base Point Coordinates</label>
+                        <div class="input-row">
+                            <input type="number" id="base-point-x" class="number-input" value="10000" step="0.01">
+                            <input type="number" id="base-point-y" class="number-input" value="20000" step="0.01">
+                        </div>
+                        <button class="btn" type="button" id="apply-base-point">Apply Base Point</button>
+                        <div class="helper-text hidden" id="base-point-status"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Reference Line</label>
+                        <div class="tools-actions">
+                            <button class="btn btn-outline" type="button" id="toggle-reference-line">Activate Reference Line</button>
+                            <button class="btn btn-secondary" type="button" id="undo-action">Undo Last Action</button>
+                        </div>
+                    </div>
+                    <div class="reference-line-inputs" id="reference-line-inputs">
+                        <div class="form-group">
+                            <label for="line-distance">Distance (ft)</label>
+                            <input type="number" id="line-distance" class="number-input" min="0" step="0.01" placeholder="Enter distance in feet">
+                        </div>
+                        <div class="form-group">
+                            <label for="line-quadrant">Quadrant</label>
+                            <select id="line-quadrant" class="select-input">
+                                <option value="NW">NW</option>
+                                <option value="NE">NE</option>
+                                <option value="SW">SW</option>
+                                <option value="SE">SE</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="line-bearing">Bearing</label>
+                            <input type="text" id="line-bearing" class="text-input" placeholder='Format example: 15°25&apos;25&quot;'>
+                        </div>
+                    </div>
+                    <div class="helper-text hidden" id="reference-line-status"></div>
+                </div>
+            </section>
+
+            <section class="tool-block collapsed" id="tool-geojson-block">
+                <div class="tool-block-header">
+                    <h3>GeoJSON Loader</h3>
+                    <button
+                        class="tool-block-toggle"
+                        type="button"
+                        aria-expanded="true"
+                        aria-controls="tool-geojson-block-content"
+                        title="Collapse GeoJSON Loader section">
+                        <span class="visually-hidden">Toggle GeoJSON Loader section</span>
+                    </button>
+                </div>
+                <div class="tool-block-content" id="tool-geojson-block-content">
+                    <p>Paste GeoJSON content and render it on the canvas.</p>
+                    <textarea
+                        id="json-input"
+                        class="json-textarea"
+                        placeholder='Paste GeoJSON data here...&#10;&#10;Example:&#10;{&#10;  "type": "FeatureCollection",&#10;  "features": [...]&#10;}'></textarea>
+                    <button class="btn" type="button" id="load-geojson" style="width: 100%;">Load & Render</button>
+                    <button class="btn btn-secondary" type="button" id="load-sample" style="width: 100%;">Load Sample Data</button>
+                </div>
+            </section>
+
+            <section class="tool-block collapsed" id="tool-export-block">
+                <div class="tool-block-header">
+                    <h3>Export</h3>
+                    <button
+                        class="tool-block-toggle"
+                        type="button"
+                        aria-expanded="true"
+                        aria-controls="tool-export-block-content"
+                        title="Collapse Export section">
+                        <span class="visually-hidden">Toggle Export section</span>
+                    </button>
+                </div>
+                <div class="tool-block-content" id="tool-export-block-content">
+                    <p>Choose a format to export the current geometry.</p>
+                    <div class="export-actions">
+                        <button class="btn btn-outline" type="button" id="export-dxf">Export DXF</button>
+                        <button class="btn btn-outline" type="button" id="export-xml">Export XML</button>
+                    </div>
+                </div>
+            </section>
+        </aside>
+    </div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+    <script type="module" src="{{ url_for('static', filename='dist/drafter.js') }}"></script>
+    {% if session_data %}
+    <script type="application/json" id="session-data-json">{{ session_data|tojson|safe }}</script>
+    <script>
+        // Pass session data to drafter
+        const sessionDataScript = document.getElementById('session-data-json');
+        window.sessionData = sessionDataScript ? JSON.parse(sessionDataScript.textContent) : null;
+        
+        // Load processed drawing if available
+        if (window.sessionData && window.sessionData.paths) {
+            console.log('Session activated:', {
+                sessionId: window.sessionData.id,
+                processedDrawing: window.sessionData.paths.processed_drawing,
+                processedDrawingUrl: window.sessionData.paths.processed_drawing_url,
+                geometryStorage: window.sessionData.paths.geometry_storage,
+                sessionDir: window.sessionData.paths.session_dir
+            });
+        }
+    </script>
+    {% endif %}
+{% endblock %}

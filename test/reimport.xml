@@ -1,0 +1,80 @@
+<?xml version="1.0"?>
+<LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.landxml.org/schema/LandXML-1.2 http://www.landxml.org/schema/LandXML-1.2/LandXML-1.2.xsd" date="2025-11-11" time="17:36:12" version="1.2" language="English" readOnly="false">
+	<Units>
+		<Imperial areaUnit="squareFoot" linearUnit="foot" volumeUnit="cubicYard" temperatureUnit="fahrenheit" pressureUnit="inchHG" diameterUnit="inch" angularUnit="decimal degrees" directionUnit="decimal degrees"></Imperial>
+	</Units>
+	<Project name="C:\Users\nprokhor\AppData\Roaming\Autodesk\C3D 2025\enu\Template\_Autodesk Civil 3D (Imperial) NCS.dwt"></Project>
+	<Application name="Autodesk Civil 3D" desc="Civil 3D" manufacturer="Autodesk, Inc." version="2025" manufacturerURL="www.autodesk.com/civil" timeStamp="2025-11-11T17:36:12"></Application>
+	<Alignments name="Site">
+		<Alignment name="Alignment - (1) (1) (1)" length="182.768585434989" staStart="0." desc="">
+			<CoordGeom>
+				<Line dir="84.262719594747" length="182.768585434989">
+					<Start>7269.040668817433 2722.457478494383</Start>
+					<End>7450.893718040687 2740.728338083121</End>
+				</Line>
+			</CoordGeom>
+			<Feature name="SpeedStation" code="0" source="Autodesk Civil 3D">
+				<Property label="station" value="0.00000000"></Property>
+				<Property label="speed" value="60.00000000"></Property>
+			</Feature>
+		</Alignment>
+		<Alignment name="Alignment - (2) (1) (1)" length="123.130065471119" staStart="0." desc="">
+			<CoordGeom>
+				<Line dir="346.954200712183" length="123.130065471119">
+					<Start>7420.717235038064 2700.214723162309</Start>
+					<End>7392.923104627349 2820.166794164164</End>
+				</Line>
+			</CoordGeom>
+			<Feature name="SpeedStation" code="0" source="Autodesk Civil 3D">
+				<Property label="station" value="0.00000000"></Property>
+				<Property label="speed" value="60.00000000"></Property>
+			</Feature>
+		</Alignment>
+		<Alignment name="Alignment - (4) (1) (1)" length="143.977973408779" staStart="0." desc="">
+			<CoordGeom>
+				<Line dir="180." length="143.977973408779">
+					<Start>7326.577204161556 2815.770586269486</Start>
+					<End>7326.577204161556 2671.792612860707</End>
+				</Line>
+			</CoordGeom>
+			<Feature name="SpeedStation" code="0" source="Autodesk Civil 3D">
+				<Property label="station" value="0.00000000"></Property>
+				<Property label="speed" value="60.00000000"></Property>
+			</Feature>
+		</Alignment>
+		<Alignment name="Alignment - (5) (1) (1)" length="119.853306830458" staStart="0." desc="">
+			<CoordGeom>
+				<Line dir="276.652024690518" length="119.853306830458">
+					<Start>7424.868785374434 2782.022693547755</Start>
+					<End>7305.822331852447 2795.906391255252</End>
+				</Line>
+			</CoordGeom>
+			<Feature name="SpeedStation" code="0" source="Autodesk Civil 3D">
+				<Property label="station" value="0.00000000"></Property>
+				<Property label="speed" value="60.00000000"></Property>
+			</Feature>
+		</Alignment>
+	</Alignments>
+	<Parcels name="Site">
+		<Parcel name="Basic : 1" area="4533.13275328693" desc="">
+			<CoordGeom>
+				<Line dir="346.954200712215" length="49.218987840893">
+					<Start>7412.229908214416 2736.843767307233</Start>
+					<End>7401.11971379118 2784.792410082184</End>
+				</Line>
+				<Line dir="276.652024690512" length="75.047731488527">
+					<Start>7401.11971379118 2784.792410082184</Start>
+					<End>7326.577204161324 2793.485870823264</End>
+				</Line>
+				<Line dir="180." length="65.247670130339">
+					<Start>7326.577204161324 2793.485870823264</Start>
+					<End>7326.577204161324 2728.238200692926</End>
+				</Line>
+				<Line dir="84.262719594908" length="86.083921195308">
+					<Start>7326.577204161324 2728.238200692926</Start>
+					<End>7412.229908214416 2736.843767307233</End>
+				</Line>
+			</CoordGeom>
+		</Parcel>
+	</Parcels>
+</LandXML>

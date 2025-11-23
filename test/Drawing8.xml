@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.landxml.org/schema/LandXML-1.2 http://www.landxml.org/schema/LandXML-1.2/LandXML-1.2.xsd" date="2025-11-20" time="13:33:16" version="1.2" language="English" readOnly="false">
+	<Units>
+		<Imperial areaUnit="squareFoot" linearUnit="foot" volumeUnit="cubicYard" temperatureUnit="fahrenheit" pressureUnit="inchHG" diameterUnit="inch" angularUnit="decimal degrees" directionUnit="decimal degrees"></Imperial>
+	</Units>
+	<Project name="C:\Users\nprokhor\AppData\Roaming\Autodesk\C3D 2025\enu\Template\_Autodesk Civil 3D (Imperial) NCS.dwt"></Project>
+	<Application name="Autodesk Civil 3D" desc="Civil 3D" manufacturer="Autodesk, Inc." version="2025" manufacturerURL="www.autodesk.com/civil" timeStamp="2025-11-20T13:33:16"></Application>
+	<Parcels name="Site 1">
+		<Parcel name="Property : 8" area="12862.203256854642" desc="">
+			<CoordGeom>
+				<Curve rot="cw" chord="216.018176528691" crvType="arc" delta="103.722249639087" dirEnd="313.722732125737" dirStart="57.444981764824" external="85.039169473838" length="248.600462877419" midOrd="52.51761169302" radius="137.325958099034" tangent="174.893771166048">
+					<Start>7363.767994374968 2514.201837926172</Start>
+					<Center>7289.87162927077 2629.950470713797</Center>
+					<End>7384.78710107645 2729.194976756815</End>
+					<PI>7511.181601938827 2608.313789864757</PI>
+				</Curve>
+				<Curve rot="cw" chord="216.018176528691" crvType="arc" delta="69.392665812814" dirEnd="150.887524038873" dirStart="220.280189851687" external="41.038092858839" length="229.808359254585" midOrd="33.740718674145" radius="189.746984467088" tangent="131.369074754984">
+					<Start>7384.78710107645 2729.194976756815</Start>
+					<Center>7529.543541074272 2606.518609050926</Center>
+					<End>7363.767994374968 2514.201837926172</End>
+					<PI>7299.853572540611 2628.974571985967</PI>
+				</Curve>
+			</CoordGeom>
+		</Parcel>
+	</Parcels>
+</LandXML>

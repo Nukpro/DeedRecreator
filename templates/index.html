@@ -1,0 +1,438 @@
+{% extends "base.html" %}
+
+{% block title %}Deed Recreator{% endblock %}
+
+{% block extra_head %}
+    <style>
+        .sessions-container {
+            margin-top: 2rem;
+        }
+
+        .sessions-table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: #ffffff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .sessions-table thead {
+            background-color: #1f2933;
+            color: #ffffff;
+        }
+
+        .sessions-table th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .sessions-table td {
+            padding: 1rem;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .sessions-table tbody tr:hover {
+            background-color: #f9fafb;
+        }
+
+        .sessions-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .status-badge.active {
+            background-color: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-badge.stage {
+            background-color: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-badge.completed {
+            background-color: #dbeafe;
+            color: #1e40af;
+        }
+
+        .user-comment {
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .no-sessions {
+            text-align: center;
+            padding: 2rem;
+            color: #6b7280;
+        }
+
+        .time-cell {
+            font-size: 0.9rem;
+            color: #6b7280;
+        }
+
+        .sessions-table tbody tr {
+            cursor: pointer;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-content {
+            background-color: #ffffff;
+            margin: 5% auto;
+            padding: 2rem;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 1.5rem;
+            color: #1f2933;
+        }
+
+        .close {
+            color: #6b7280;
+            font-size: 2rem;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 1;
+            transition: color 0.2s ease;
+        }
+
+        .close:hover {
+            color: #1f2933;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #1f2933;
+            font-size: 0.9rem;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-family: inherit;
+            box-sizing: border-box;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .btn-primary {
+            background-color: #2563eb;
+            color: #ffffff;
+        }
+
+        .btn-primary:hover {
+            background-color: #1d4ed8;
+        }
+
+        .btn-secondary {
+            background-color: #6b7280;
+            color: #ffffff;
+        }
+
+        .btn-secondary:hover {
+            background-color: #4b5563;
+        }
+
+        .btn-success {
+            background-color: #10b981;
+            color: #ffffff;
+        }
+
+        .btn-success:hover {
+            background-color: #059669;
+        }
+
+        .error-message {
+            color: #dc2626;
+            font-size: 0.875rem;
+            margin-top: 0.5rem;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <h1>Welcome to Deed Recreator</h1>
+    <p>This workspace will help you recreate deeds and manage project geometry.</p>
+    <p><a href="{{ url_for('pages.create_session') }}">Create new session</a> to start working with the drafter workspace.</p>
+
+    <div class="sessions-container">
+        <h2>Sessions</h2>
+        {% if sessions %}
+            <table class="sessions-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Session Name</th>
+                        <th>Session Status</th>
+                        <th>User Comment</th>
+                        <th>Creation Time</th>
+                        <th>Update Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for session in sessions %}
+                        <tr data-session-id="{{ session.id }}">
+                            <td>{{ session.id }}</td>
+                            <td>{{ session.session_name }}</td>
+                            <td>
+                                <span class="status-badge {{ session.session_status or 'stage' }}">
+                                    {{ session.session_status or 'stage' }}
+                                </span>
+                            </td>
+                            <td class="user-comment" title="{{ session.user_comment or '' }}">
+                                {{ session.user_comment or '—' }}
+                            </td>
+                            <td class="time-cell">{{ session.creation_time }}</td>
+                            <td class="time-cell">{{ session.update_time or 'N/A' }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <div class="no-sessions">
+                <p>No sessions found.</p>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Session Edit Modal -->
+    <div id="sessionModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Session</h2>
+                <span class="close">&times;</span>
+            </div>
+            <form id="sessionForm">
+                <input type="hidden" id="sessionId" name="session_id">
+                <div class="form-group">
+                    <label for="sessionName">Session Name</label>
+                    <input type="text" id="sessionName" name="session_name" required>
+                    <div class="error-message" id="nameError"></div>
+                </div>
+                <div class="form-group">
+                    <label for="userComment">User Comment</label>
+                    <textarea id="userComment" name="user_comment"></textarea>
+                    <div class="error-message" id="commentError"></div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>
+                    <button type="button" class="btn btn-success" id="openDrafterBtn">Open Drafter</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    (function() {
+        const modal = document.getElementById('sessionModal');
+        const form = document.getElementById('sessionForm');
+        const sessionIdInput = document.getElementById('sessionId');
+        const sessionNameInput = document.getElementById('sessionName');
+        const userCommentInput = document.getElementById('userComment');
+        const closeBtn = document.querySelector('.close');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const openDrafterBtn = document.getElementById('openDrafterBtn');
+        const nameError = document.getElementById('nameError');
+        const commentError = document.getElementById('commentError');
+
+        // Get all table rows with session data
+        const sessionRows = document.querySelectorAll('tbody tr[data-session-id]');
+
+        // Open modal on row click
+        sessionRows.forEach(row => {
+            row.addEventListener('click', function(e) {
+                // Don't open modal if clicking on a link or button
+                if (e.target.tagName === 'A' || e.target.tagName === 'BUTTON') {
+                    return;
+                }
+                const sessionId = this.getAttribute('data-session-id');
+                openModal(sessionId);
+            });
+        });
+
+        // Close modal handlers
+        closeBtn.addEventListener('click', closeModal);
+        cancelBtn.addEventListener('click', closeModal);
+        window.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                closeModal();
+            }
+        });
+
+        // Open drafter button handler
+        openDrafterBtn.addEventListener('click', function() {
+            const sessionId = sessionIdInput.value;
+            if (sessionId) {
+                const drafterUrl = '{{ url_for("pages.drafter") }}?session_id=' + sessionId;
+                window.location.href = drafterUrl;
+            }
+        });
+
+        // Form submission handler
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            clearErrors();
+
+            const sessionId = sessionIdInput.value;
+            const sessionName = sessionNameInput.value.trim();
+            const userComment = userCommentInput.value.trim();
+
+            if (!sessionName) {
+                showError(nameError, 'Session name is required');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/sessions/${sessionId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_name: sessionName,
+                        user_comment: userComment,
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Reload page to show updated data
+                    window.location.reload();
+                } else {
+                    showError(nameError, data.message || 'Failed to update session');
+                }
+            } catch (error) {
+                showError(nameError, 'An error occurred while updating the session');
+                console.error('Error updating session:', error);
+            }
+        });
+
+        async function openModal(sessionId) {
+            try {
+                const response = await fetch(`/api/sessions/${sessionId}`);
+                const data = await response.json();
+
+                if (response.ok && data.session) {
+                    const session = data.session;
+                    sessionIdInput.value = session.id;
+                    sessionNameInput.value = session.session_name || '';
+                    userCommentInput.value = session.user_comment || '';
+                    clearErrors();
+                    modal.style.display = 'block';
+                } else {
+                    alert('Failed to load session data');
+                }
+            } catch (error) {
+                alert('An error occurred while loading session data');
+                console.error('Error loading session:', error);
+            }
+        }
+
+        function closeModal() {
+            modal.style.display = 'none';
+            form.reset();
+            clearErrors();
+        }
+
+        function showError(element, message) {
+            element.textContent = message;
+            element.classList.add('show');
+        }
+
+        function clearErrors() {
+            nameError.classList.remove('show');
+            commentError.classList.remove('show');
+            nameError.textContent = '';
+            commentError.textContent = '';
+        }
+    })();
+</script>
+{% endblock %}

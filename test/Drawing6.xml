@@ -1,0 +1,206 @@
+<?xml version="1.0"?>
+<LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.landxml.org/schema/LandXML-1.2 http://www.landxml.org/schema/LandXML-1.2/LandXML-1.2.xsd" date="2025-11-20" time="13:24:05" version="1.2" language="English" readOnly="false">
+	<Units>
+		<Imperial areaUnit="squareFoot" linearUnit="foot" volumeUnit="cubicYard" temperatureUnit="fahrenheit" pressureUnit="inchHG" diameterUnit="inch" angularUnit="decimal degrees" directionUnit="decimal degrees"></Imperial>
+	</Units>
+	<Project name="C:\Users\nprokhor\AppData\Roaming\Autodesk\C3D 2025\enu\Template\_Autodesk Civil 3D (Imperial) NCS.dwt"></Project>
+	<Application name="Autodesk Civil 3D" desc="Civil 3D" manufacturer="Autodesk, Inc." version="2025" manufacturerURL="www.autodesk.com/civil" timeStamp="2025-11-20T13:24:05"></Application>
+	<Parcels name="Site 1">
+		<Parcel name="Property : 1" area="18366.914443544883" desc="">
+			<CoordGeom>
+				<Line dir="90." length="82.077018620912">
+					<Start>7314.945046752691 2636.169436127413</Start>
+					<End>7397.022065373603 2636.169436127413</End>
+				</Line>
+				<Curve rot="cw" chord="64.408895530313" crvType="arc" delta="78.989408643989" dirEnd="70.967178475257" dirStart="149.956587119246" external="14.981401118123" length="69.807206669088" midOrd="11.560898115704" radius="50.635374924288" tangent="41.732722227009">
+					<Start>7397.022065373603 2636.169436127413</Start>
+					<Center>7440.854390648581 2661.520342515781</Center>
+					<End>7457.367079364136 2613.653106277343</End>
+					<PI>7417.915804900378 2600.043659276749</PI>
+				</Curve>
+				<Curve rot="cw" chord="93.088071580388" crvType="arc" delta="133.618807576835" dirEnd="297.348370897987" dirStart="70.967178474822" external="77.9489974602" length="118.086157062309" midOrd="30.695617501383" radius="50.635374924288" tangent="118.194752962173">
+					<Start>7457.367079364136 2613.653106277343</Start>
+					<Center>7440.854390648218 2661.520342515655</Center>
+					<End>7464.116261105053 2706.496186883189</End>
+					<PI>7569.100352212 2652.19756588562</PI>
+				</Curve>
+				<Curve rot="cw" chord="69.905431058904" crvType="arc" delta="87.304958017139" dirEnd="210.043412880818" dirStart="297.348370897957" external="19.347460823981" length="77.156106776018" midOrd="13.998660131149" radius="50.635374924053" tangent="48.307930049185">
+					<Start>7464.116261105053 2706.496186883189</Start>
+					<Center>7440.854390648349 2661.520342515851</Center>
+					<End>7397.022065373603 2686.87124890415</End>
+					<PI>7421.207722423171 2728.688830119683</PI>
+				</Curve>
+				<Line dir="270." length="82.077018620912">
+					<Start>7397.022065373603 2686.87124890415</Start>
+					<End>7314.945046752691 2686.87124890415</End>
+				</Line>
+				<Line dir="270." length="73.703029488679">
+					<Start>7314.945046752691 2686.87124890415</Start>
+					<End>7241.242017264012 2686.87124890415</End>
+				</Line>
+				<Line dir="270." length="52.206314406823">
+					<Start>7241.242017264012 2686.87124890415</Start>
+					<End>7189.035702857189 2686.87124890415</End>
+				</Line>
+				<Line dir="180." length="50.701812776737">
+					<Start>7189.035702857189 2686.87124890415</Start>
+					<End>7189.035702857189 2636.169436127413</End>
+				</Line>
+				<Line dir="90." length="52.206314406823">
+					<Start>7189.035702857189 2636.169436127413</Start>
+					<End>7241.242017264012 2636.169436127413</End>
+				</Line>
+				<Line dir="90." length="73.703029488679">
+					<Start>7241.242017264012 2636.169436127413</Start>
+					<End>7314.945046752691 2636.169436127413</End>
+				</Line>
+			</CoordGeom>
+		</Parcel>
+		<Parcel name="Property : 2" area="5019.362329248346" desc="">
+			<CoordGeom>
+				<Line dir="270." length="69.872923730873">
+					<Start>7366.423609008081 2752.937247371301</Start>
+					<End>7296.550685277209 2752.937247371301</End>
+				</Line>
+				<Line dir="164.44151966315" length="68.57892305623">
+					<Start>7296.550685277209 2752.937247371301</Start>
+					<End>7314.945046752691 2686.87124890415</End>
+				</Line>
+				<Line dir="90." length="82.077018620912">
+					<Start>7314.945046752691 2686.87124890415</Start>
+					<End>7397.022065373603 2686.87124890415</End>
+				</Line>
+				<Line dir="335.148794311812" length="72.807840823735">
+					<Start>7397.022065373603 2686.87124890415</Start>
+					<End>7366.423609008081 2752.937247371301</End>
+				</Line>
+			</CoordGeom>
+		</Parcel>
+		<Parcel name="Property : 3" area="4261.643304701731" desc="">
+			<CoordGeom>
+				<Line dir="180." length="66.065998467151">
+					<Start>7241.242017264012 2752.937247371301</Start>
+					<End>7241.242017264012 2686.87124890415</End>
+				</Line>
+				<Line dir="90." length="73.703029488679">
+					<Start>7241.242017264012 2686.87124890415</Start>
+					<End>7314.945046752691 2686.87124890415</End>
+				</Line>
+				<Line dir="344.44151966315" length="68.57892305623">
+					<Start>7314.945046752691 2686.87124890415</Start>
+					<End>7296.550685277209 2752.937247371301</End>
+				</Line>
+				<Line dir="270." length="55.308668013196">
+					<Start>7296.550685277209 2752.937247371301</Start>
+					<End>7241.242017264012 2752.937247371301</End>
+				</Line>
+			</CoordGeom>
+		</Parcel>
+		<Parcel name="Property : 4" area="7870.086224674601" desc="">
+			<CoordGeom>
+				<Line dir="90." length="73.703029488679">
+					<Start>7241.242017264012 2529.388394977897</Start>
+					<End>7314.945046752691 2529.388394977897</End>
+				</Line>
+				<Line dir="0." length="106.781041149516">
+					<Start>7314.945046752691 2529.388394977897</Start>
+					<End>7314.945046752691 2636.169436127413</End>
+				</Line>
+				<Line dir="270." length="73.703029488679">
+					<Start>7314.945046752691 2636.169436127413</Start>
+					<End>7241.242017264012 2636.169436127413</End>
+				</Line>
+				<Line dir="180." length="106.781041149516">
+					<Start>7241.242017264012 2636.169436127413</Start>
+					<End>7241.242017264012 2529.388394977897</End>
+				</Line>
+			</CoordGeom>
+		</Parcel>
+		<Parcel name="Property : 5" area="8764.269502789166" desc="">
+			<CoordGeom>
+				<Line dir="90." length="82.077018620912">
+					<Start>7314.945046752691 2529.388394977897</Start>
+					<End>7397.022065373603 2529.388394977897</End>
+				</Line>
+				<Line dir="0." length="106.781041149516">
+					<Start>7397.022065373603 2529.388394977897</Start>
+					<End>7397.022065373603 2636.169436127413</End>
+				</Line>
+				<Line dir="270." length="82.077018620912">
+					<Start>7397.022065373603 2636.169436127413</Start>
+					<End>7314.945046752691 2636.169436127413</End>
+				</Line>
+				<Line dir="180." length="106.781041149516">
+					<Start>7314.945046752691 2636.169436127413</Start>
+					<End>7314.945046752691 2529.388394977897</End>
+				</Line>
+			</CoordGeom>
+		</Parcel>
+		<Parcel name="Property : 6" area="7858.988617877882" desc="">
+			<CoordGeom>
+				<Line dir="90." length="122.141805773601">
+					<Start>7397.022065373603 2529.388394977897</Start>
+					<End>7519.163871147204 2529.388394977897</End>
+				</Line>
+				<Line dir="323.744981630412" length="104.495861377658">
+					<Start>7519.163871147204 2529.388394977897</Start>
+					<End>7457.367079364136 2613.653106277343</End>
+				</Line>
+				<Curve rot="ccw" chord="64.408895530313" crvType="arc" delta="78.989408643989" dirEnd="329.956587119246" dirStart="250.967178475257" external="14.981401118123" length="69.807206669088" midOrd="11.560898115704" radius="50.635374924288" tangent="41.732722227009">
+					<Start>7457.367079364136 2613.653106277343</Start>
+					<Center>7440.854390648581 2661.520342515781</Center>
+					<End>7397.022065373603 2636.169436127413</End>
+					<PI>7417.915804900378 2600.043659276749</PI>
+				</Curve>
+				<Line dir="180." length="106.781041149516">
+					<Start>7397.022065373603 2636.169436127413</Start>
+					<End>7397.022065373603 2529.388394977897</End>
+				</Line>
+			</CoordGeom>
+		</Parcel>
+		<Parcel name="Property : 7" area="7244.384576793534" desc="">
+			<CoordGeom>
+				<Line dir="0." length="223.548852393404">
+					<Start>7519.163871147204 2529.388394977897</Start>
+					<End>7519.163871147204 2752.937247371301</End>
+				</Line>
+				<Line dir="229.847259696044" length="72.020909954077">
+					<Start>7519.163871147204 2752.937247371301</Start>
+					<End>7464.116261105053 2706.496186883189</End>
+				</Line>
+				<Curve rot="ccw" chord="93.088071580388" crvType="arc" delta="133.618807576835" dirEnd="250.967178474822" dirStart="117.348370897987" external="77.9489974602" length="118.086157062309" midOrd="30.695617501383" radius="50.635374924288" tangent="118.194752962173">
+					<Start>7464.116261105053 2706.496186883189</Start>
+					<Center>7440.854390648218 2661.520342515655</Center>
+					<End>7457.367079364136 2613.653106277343</End>
+					<PI>7569.100352212 2652.19756588562</PI>
+				</Curve>
+				<Line dir="143.744981630412" length="104.495861377658">
+					<Start>7457.367079364136 2613.653106277343</Start>
+					<End>7519.163871147204 2529.388394977897</End>
+				</Line>
+			</CoordGeom>
+		</Parcel>
+		<Parcel name="Property : 8" area="5390.41726982285" desc="">
+			<CoordGeom>
+				<Line dir="270." length="152.740262139123">
+					<Start>7519.163871147204 2752.937247371301</Start>
+					<End>7366.423609008081 2752.937247371301</End>
+				</Line>
+				<Line dir="155.148794311812" length="72.807840823735">
+					<Start>7366.423609008081 2752.937247371301</Start>
+					<End>7397.022065373603 2686.87124890415</End>
+				</Line>
+				<Curve rot="ccw" chord="69.905431058904" crvType="arc" delta="87.304958017139" dirEnd="117.348370897957" dirStart="30.043412880818" external="19.347460823981" length="77.156106776018" midOrd="13.998660131148" radius="50.635374924053" tangent="48.307930049185">
+					<Start>7397.022065373603 2686.87124890415</Start>
+					<Center>7440.854390648349 2661.520342515851</Center>
+					<End>7464.116261105053 2706.496186883189</End>
+					<PI>7421.207722423171 2728.688830119683</PI>
+				</Curve>
+				<Line dir="49.847259696044" length="72.020909954077">
+					<Start>7464.116261105053 2706.496186883189</Start>
+					<End>7519.163871147204 2752.937247371301</End>
+				</Line>
+			</CoordGeom>
+		</Parcel>
+	</Parcels>
+</LandXML>

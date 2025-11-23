@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.landxml.org/schema/LandXML-1.2 http://www.landxml.org/schema/LandXML-1.2/LandXML-1.2.xsd" date="2025-11-20" time="13:22:06" version="1.2" language="English" readOnly="false">
+	<Units>
+		<Imperial areaUnit="squareFoot" linearUnit="foot" volumeUnit="cubicYard" temperatureUnit="fahrenheit" pressureUnit="inchHG" diameterUnit="inch" angularUnit="decimal degrees" directionUnit="decimal degrees"></Imperial>
+	</Units>
+	<Project name="C:\Users\nprokhor\AppData\Roaming\Autodesk\C3D 2025\enu\Template\_Autodesk Civil 3D (Imperial) NCS.dwt"></Project>
+	<Application name="Autodesk Civil 3D" desc="Civil 3D" manufacturer="Autodesk, Inc." version="2025" manufacturerURL="www.autodesk.com/civil" timeStamp="2025-11-20T13:22:06"></Application>
+	<Alignments name=""></Alignments>
+	<Parcels name="Site">
+		<Parcel name="Property : 1" area="602.039836106854" desc="">
+			<CoordGeom>
+				<Curve rot="cw" chord="38.402597233636" crvType="arc" delta="94.671398676751" dirEnd="238.034598146592" dirStart="332.705996823343" external="12.418346020032" length="43.145980946798" midOrd="8.415933392987" radius="26.112243462718" tangent="28.332967850756">
+					<Start>13.344565531239 -9.768220900092</Start>
+					<Center>-9.860477364322 -21.742161056594</Center>
+					<End>-23.684483731631 0.410628984682</End>
+					<PI>0.352297670938 15.410302549033</PI>
+				</Curve>
+				<Line dir="142.755303817907" length="32.466923213239">
+					<Start>-23.684483731631 0.410628984682</Start>
+					<End>-4.034842715599 -25.434925969224</End>
+				</Line>
+				<Line dir="47.966852436156" length="23.398493086808">
+					<Start>-4.034842715599 -25.434925969224</Start>
+					<End>13.344565531239 -9.768220900092</End>
+				</Line>
+			</CoordGeom>
+		</Parcel>
+	</Parcels>
+</LandXML>
