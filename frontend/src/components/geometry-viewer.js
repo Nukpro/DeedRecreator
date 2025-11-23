@@ -35,6 +35,11 @@ export default class GeometryViewer {
     this.isPanning = false;
     this.lastPanPoint = { x: 0, y: 0 };
     this.coordDisplay = null;
+    
+    // Drawing mode state
+    this.drawingMode = null; // "points", "segments", "arcs", etc.
+    this.onPointClick = null; // Callback for point clicks
+    this.onObjectClick = null; // Callback for object clicks (cursor mode)
 
     this.init();
   }
@@ -69,9 +74,16 @@ export default class GeometryViewer {
     this.canvas.addEventListener("touchend", this.onTouchEnd.bind(this));
   }
 
-  loadData(jsonData) {
+  loadData(jsonData, preserveView = false) {
     this.data = jsonData;
-    this.recalculateScene();
+    if (preserveView) {
+      // Update bounds and render without changing view
+      this.calculateBounds();
+    } else {
+      this.recalculateScene();
+    }
+    // Always render after loading data to ensure updates are visible
+    this.render();
   }
 
   calculateBounds() {
@@ -238,6 +250,20 @@ export default class GeometryViewer {
         }
       });
     }
+    
+    // Render points if they exist in data
+    if (this.data && this.data.points && Array.isArray(this.data.points)) {
+      this.data.points.forEach((point) => {
+        if (point.x !== undefined && point.y !== undefined) {
+          this.renderPoint(point.x, point.y, {
+            size: 4,
+            color: "#ff0000",
+            stroke: "#ffffff",
+            strokeWidth: 1
+          });
+        }
+      });
+    }
   }
 
   renderFeature(feature) {
@@ -340,14 +366,68 @@ export default class GeometryViewer {
   }
 
   onMouseDown(event) {
+    const rect = this.canvas.getBoundingClientRect();
+    const canvasX = event.clientX - rect.left;
+    const canvasY = event.clientY - rect.top;
+    const worldPoint = this.canvasToWorld(canvasX, canvasY);
+    
+    // If in drawing mode, handle click for drawing
+    if (this.drawingMode === "points" && this.onPointClick) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.onPointClick(worldPoint.x, worldPoint.y, canvasX, canvasY);
+      return;
+    }
+    
+    // If in cursor mode, check for object clicks
+    if (this.drawingMode === null && this.onObjectClick) {
+      const clickedObject = this.findObjectAtPoint(worldPoint.x, worldPoint.y, canvasX, canvasY);
+      if (clickedObject) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.onObjectClick(clickedObject, { x: event.clientX, y: event.clientY });
+        return;
+      }
+    }
+    
+    // Otherwise, handle panning
     this.isPanning = true;
     this.canvas.style.cursor = "grabbing";
-    const rect = this.canvas.getBoundingClientRect();
     this.lastPanPoint = {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top
+      x: canvasX,
+      y: canvasY
     };
-    this.updateCoordDisplay(this.lastPanPoint.x, this.lastPanPoint.y);
+    this.updateCoordDisplay(canvasX, canvasY);
+  }
+
+  findObjectAtPoint(worldX, worldY, canvasX, canvasY) {
+    // Check points first
+    if (this.data && this.data.points && Array.isArray(this.data.points)) {
+      const clickTolerance = 8; // pixels
+      
+      for (const point of this.data.points) {
+        if (point.x !== undefined && point.y !== undefined) {
+          const pointCanvasPos = this.worldToCanvas(point.x, point.y);
+          const distance = Math.sqrt(
+            Math.pow(canvasX - pointCanvasPos.x, 2) + 
+            Math.pow(canvasY - pointCanvasPos.y, 2)
+          );
+          
+          if (distance <= clickTolerance) {
+            return {
+              type: "point",
+              id: point.id,
+              x: point.x,
+              y: point.y,
+              layer: point.layer || "",
+              ...point
+            };
+          }
+        }
+      }
+    }
+    
+    return null;
   }
 
   onMouseMove(event) {
@@ -363,17 +443,30 @@ export default class GeometryViewer {
 
       this.lastPanPoint = { x: currentX, y: currentY };
       this.render();
+    } else if (this.drawingMode === "points") {
+      // Ensure crosshair cursor is maintained when not panning in points mode
+      this.canvas.style.cursor = "crosshair";
     }
   }
 
   onMouseUp() {
     this.isPanning = false;
-    this.canvas.style.cursor = "grab";
+    // Keep crosshair cursor if in drawing mode
+    if (this.drawingMode === "points") {
+      this.canvas.style.cursor = "crosshair";
+    } else {
+      this.canvas.style.cursor = "grab";
+    }
   }
 
   onMouseLeave() {
     this.isPanning = false;
-    this.canvas.style.cursor = "grab";
+    // Keep crosshair cursor if in drawing mode
+    if (this.drawingMode === "points") {
+      this.canvas.style.cursor = "crosshair";
+    } else {
+      this.canvas.style.cursor = "grab";
+    }
     this.resetCoordDisplay();
   }
 
@@ -432,6 +525,12 @@ export default class GeometryViewer {
 
   onTouchEnd() {
     this.isPanning = false;
+    // Keep crosshair cursor if in drawing mode
+    if (this.drawingMode === "points") {
+      this.canvas.style.cursor = "crosshair";
+    } else {
+      this.canvas.style.cursor = "grab";
+    }
     this.resetCoordDisplay();
   }
 
@@ -537,6 +636,40 @@ export default class GeometryViewer {
     this.fitToView();
     this.render();
     this.resetCoordDisplay();
+  }
+
+  setDrawingMode(mode, callback = null) {
+    // Set drawing mode and callback for clicks
+    this.drawingMode = mode;
+    this.onPointClick = callback;
+    
+    // Update cursor based on mode
+    if (mode === "points") {
+      this.canvas.style.cursor = "crosshair";
+    } else if (mode === null) {
+      this.canvas.style.cursor = "grab";
+    } else {
+      this.canvas.style.cursor = "crosshair";
+    }
+  }
+
+  renderPoint(x, y, style = {}) {
+    // Render a point on the canvas
+    const canvasPos = this.worldToCanvas(x, y);
+    const pointSize = style.size || 4;
+    const pointColor = style.color || "#ff0000";
+    
+    this.ctx.fillStyle = pointColor;
+    this.ctx.beginPath();
+    this.ctx.arc(canvasPos.x, canvasPos.y, pointSize, 0, 2 * Math.PI);
+    this.ctx.fill();
+    
+    // Optional: draw a circle outline
+    if (style.stroke) {
+      this.ctx.strokeStyle = style.stroke;
+      this.ctx.lineWidth = style.strokeWidth || 1;
+      this.ctx.stroke();
+    }
   }
 }
 

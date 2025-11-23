@@ -68,3 +68,12 @@
   opacity: 0.55;
 }
 
+.drawing-btn.active,
+.drawing-btn[data-state="active"] {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+  background: linear-gradient(180deg, #e0ecff 0%, #c7d7ff 100%);
+  color: #0f172a;
+  opacity: 1;
+}
+

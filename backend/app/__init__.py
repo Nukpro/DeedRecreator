@@ -36,10 +36,12 @@ def _register_blueprints(app: Flask) -> None:
     from backend.api.pages.routes import pages_bp
     from backend.api.uploads.routes import uploads_bp
     from backend.api.sessions.routes import sessions_bp
+    from backend.api.geometry import geometry_bp
 
     app.register_blueprint(pages_bp)
     app.register_blueprint(uploads_bp)
     app.register_blueprint(sessions_bp)
+    app.register_blueprint(geometry_bp)
 
 
 def _ensure_instance_subdirs(app: Flask) -> None:

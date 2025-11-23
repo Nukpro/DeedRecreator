@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Drawing Controls</title>
+    <style>
+        .drawing-controls {
+            display: flex;
+            gap: 0.5rem;
+            padding: 1rem;
+        }
+        .drawing-btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid #ccc;
+            background: #f0f0f0;
+            cursor: pointer;
+        }
+        .drawing-btn.active {
+            background: #4CAF50;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Drawing Controls</h1>
+    <div class="drawing-controls">
+        <button class="drawing-btn" data-mode="cursor" data-state="active">Cursor</button>
+        <button class="drawing-btn" data-mode="points" data-state="inactive">Point</button>
+        <button class="drawing-btn" data-mode="segments" data-state="inactive">PLine</button>
+    </div>
+    
+    <script>
+        // Test script
+        function testDrawingControls() {
+            const buttons = document.querySelectorAll('.drawing-btn');
+            console.log('Found buttons:', buttons.length);
+            
+            buttons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    console.log('Button clicked:', btn.dataset.mode);
+                    buttons.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                });
+            });
+        }
+        
+        testDrawingControls();
+    </script>
+</body>
+</html>
+

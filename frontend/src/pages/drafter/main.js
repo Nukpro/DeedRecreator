@@ -1,8 +1,13 @@
 import GeometryViewer from "../../components/geometry-viewer.js";
+import PropertyEditor from "../../components/property-editor.js";
 import "../../styles/geometry-viewer.css";
+import "../../styles/property-editor.css";
 import "./style.css";
 
+console.log("=== DRAFTER MODULE LOADING ===");
+
 let geometryViewer = null;
+let propertyEditor = null;
 let referenceLineActive = false;
 const actionHistory = [];
 let currentRasterObjectUrl = null;
@@ -198,6 +203,26 @@ function initializeGeometryViewer() {
     padding: 20
   });
 
+  // Initialize property editor
+  propertyEditor = new PropertyEditor(container);
+
+  // Setup object click handler
+  geometryViewer.onObjectClick = (object, position) => {
+    console.log("Object clicked:", object, position);
+    propertyEditor.show(
+      object,
+      position,
+      (values) => {
+        // Save handler
+        handleObjectUpdate(values);
+      },
+      () => {
+        // Cancel handler
+        console.log("Property editor cancelled");
+      }
+    );
+  };
+
   window.addEventListener("resize", () => {
     if (!geometryViewer) {
       return;
@@ -205,6 +230,102 @@ function initializeGeometryViewer() {
     const newRect = container.getBoundingClientRect();
     geometryViewer.resize(newRect.width, newRect.height);
   });
+}
+
+// Handle object update
+async function handleObjectUpdate(values) {
+  const getSessionId = () => {
+    if (window.sessionData && window.sessionData.id) {
+      return window.sessionData.id;
+    }
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get("session_id");
+    return sessionId ? parseInt(sessionId, 10) : null;
+  };
+
+  const sessionId = getSessionId();
+  if (!sessionId) {
+    console.error("No session ID available");
+    return;
+  }
+
+  if (values && values.type === "point") {
+    try {
+      // Prepare update data - always include all fields
+      const updateData = {
+        x: values.x,
+        y: values.y,
+        layer: values.layer || ""
+      };
+
+      console.log("handleObjectUpdate called with values:", values);
+      console.log("Sending update request:", { 
+        url: `/api/geometry/${sessionId}/point/${values.id}`,
+        method: "PUT",
+        data: updateData 
+      });
+
+      const response = await fetch(`/api/geometry/${sessionId}/point/${values.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(updateData)
+      });
+
+      console.log("Update response status:", response.status, response.statusText);
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Point updated successfully on server:", result);
+        
+        // Reload geometry to show updated point, but preserve view
+        if (geometryViewer) {
+          try {
+            console.log("Reloading geometry from server...");
+            const reloadResponse = await fetch(`/api/geometry/${sessionId}`);
+            if (reloadResponse.ok) {
+              const data = await reloadResponse.json();
+              console.log("Geometry reloaded from server, points:", data.points);
+              // Load data without changing view (preserve zoom and position)
+              geometryViewer.loadData(data, true);
+              console.log("Geometry loaded into viewer, data:", geometryViewer.data);
+              // Force re-render to show updated point position
+              geometryViewer.render();
+              console.log("Render complete, changes should be visible now");
+              
+              // Close property editor after successful update
+              if (propertyEditor) {
+                propertyEditor.hide();
+              }
+            } else {
+              const errorText = await reloadResponse.text();
+              console.error("Failed to reload geometry:", reloadResponse.status, errorText);
+            }
+          } catch (error) {
+            console.error("Error reloading geometry:", error);
+          }
+        } else {
+          console.error("GeometryViewer is not available");
+        }
+      } else {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { message: errorText || "Unknown error" };
+        }
+        console.error("Failed to update point:", response.status, errorData);
+        alert(`Failed to update point: ${errorData.message || "Unknown error"}`);
+      }
+    } catch (error) {
+      console.error("Error updating point:", error);
+      alert("An error occurred while updating the point: " + error.message);
+    }
+  } else {
+    console.error("Invalid values for update:", values);
+  }
 }
 
 function setupGeometryControls() {
@@ -566,6 +687,237 @@ function setupExportControls() {
   });
 }
 
+function setupDrawingControls() {
+  // Setup handlers for drawing control buttons
+  console.log("setupDrawingControls called");
+  
+  const drawingControls = document.querySelector(".drawing-controls");
+  if (!drawingControls) {
+    console.warn("Drawing controls container not found. Retrying in 100ms...");
+    setTimeout(setupDrawingControls, 100);
+    return;
+  }
+  
+  console.log("Drawing controls container found:", drawingControls);
+  
+  const drawingButtons = drawingControls.querySelectorAll(".drawing-btn");
+  
+  if (drawingButtons.length === 0) {
+    console.warn("No drawing buttons found. Retrying in 100ms...");
+    setTimeout(setupDrawingControls, 100);
+    return;
+  }
+  
+  console.log(`Found ${drawingButtons.length} drawing buttons:`, Array.from(drawingButtons).map(btn => ({
+    mode: btn.dataset.mode,
+    state: btn.dataset.state,
+    hasActiveClass: btn.classList.contains("active")
+  })));
+  
+  let currentMode = null; // No mode selected initially
+  
+  // Get session ID
+  const getSessionId = () => {
+    if (window.sessionData && window.sessionData.id) {
+      return window.sessionData.id;
+    }
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get("session_id");
+    return sessionId ? parseInt(sessionId, 10) : null;
+  };
+  
+  // Load current geometry from server
+  const loadGeometry = async (preserveView = false) => {
+    const sessionId = getSessionId();
+    if (!sessionId) {
+      console.warn("No session ID available");
+      return null;
+    }
+    
+    try {
+      const response = await fetch(`/api/geometry/${sessionId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (geometryViewer) {
+          geometryViewer.loadData(data, preserveView);
+        }
+        return data;
+      }
+    } catch (error) {
+      console.error("Failed to load geometry:", error);
+    }
+    return null;
+  };
+  
+  // Save point to server
+  const savePoint = async (x, y) => {
+    const sessionId = getSessionId();
+    if (!sessionId) {
+      console.error("No session ID available");
+      return;
+    }
+    
+    try {
+      const response = await fetch(`/api/geometry/${sessionId}/point`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ x, y })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Point saved:", result);
+        // Reload geometry to show new point, but preserve current view
+        if (geometryViewer) {
+          try {
+            const reloadResponse = await fetch(`/api/geometry/${sessionId}`);
+            if (reloadResponse.ok) {
+              const data = await reloadResponse.json();
+              // Load data without changing view (preserve zoom and position)
+              geometryViewer.loadData(data, true);
+            }
+          } catch (error) {
+            console.error("Failed to reload geometry:", error);
+          }
+        }
+      } else {
+        const error = await response.json();
+        console.error("Failed to save point:", error);
+      }
+    } catch (error) {
+      console.error("Error saving point:", error);
+    }
+  };
+  
+  // Handle point click
+  const handlePointClick = (x, y, canvasX, canvasY) => {
+    console.log(`Point clicked at world coordinates: (${x.toFixed(3)}, ${y.toFixed(3)})`);
+    savePoint(x, y);
+  };
+  
+  // Update button states
+  const updateButtonStates = (activeMode) => {
+    console.log(`updateButtonStates called with activeMode: ${activeMode}`);
+    drawingButtons.forEach((button) => {
+      const mode = button.dataset.mode;
+      if (mode === activeMode) {
+        console.log(`Activating button: ${mode}`);
+        button.dataset.state = "active";
+        button.setAttribute("aria-pressed", "true");
+        button.classList.add("active");
+        console.log(`Button ${mode} state after update:`, {
+          datasetState: button.dataset.state,
+          ariaPressed: button.getAttribute("aria-pressed"),
+          hasActiveClass: button.classList.contains("active"),
+          classList: Array.from(button.classList)
+        });
+      } else {
+        button.dataset.state = "inactive";
+        button.setAttribute("aria-pressed", "false");
+        button.classList.remove("active");
+      }
+    });
+  };
+  
+  // Handle mode change
+  const setMode = (mode) => {
+    console.log(`setMode called with: ${mode}`);
+    currentMode = mode;
+    updateButtonStates(mode);
+    
+    if (geometryViewer) {
+      if (mode === "points") {
+        console.log("Setting geometryViewer to points mode");
+        geometryViewer.setDrawingMode("points", handlePointClick);
+      } else if (mode === "cursor" || mode === null) {
+        console.log("Setting geometryViewer to cursor mode (null)");
+        geometryViewer.setDrawingMode(null);
+      } else {
+        // Other modes will be implemented later
+        console.log("Setting geometryViewer to null (other mode)");
+        geometryViewer.setDrawingMode(null);
+      }
+    } else {
+      console.warn("geometryViewer is not available!");
+    }
+  };
+  
+  // Handle undo action
+  const handleUndo = async () => {
+    const sessionId = getSessionId();
+    if (!sessionId) {
+      console.error("No session ID available");
+      return;
+    }
+    
+    try {
+      const response = await fetch(`/api/geometry/${sessionId}/undo`, {
+        method: "POST"
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Undo successful:", result);
+        // Reload geometry to show previous state
+        await loadGeometry();
+      } else {
+        const error = await response.json();
+        console.error("Failed to undo:", error);
+        // eslint-disable-next-line no-alert
+        alert(error.message || "Failed to undo action");
+      }
+    } catch (error) {
+      console.error("Error undoing action:", error);
+      // eslint-disable-next-line no-alert
+      alert("An error occurred while undoing the action");
+    }
+  };
+  
+  // Add click handlers to buttons
+  drawingButtons.forEach((button) => {
+    const mode = button.dataset.mode;
+    console.log(`Adding click handler to button: ${mode}`);
+    
+    button.addEventListener("click", (event) => {
+      console.log(`Button clicked: ${mode}, currentMode: ${currentMode}`);
+      event.preventDefault();
+      event.stopPropagation();
+      
+      if (mode === "undo") {
+        handleUndo();
+        return;
+      }
+      
+      if (mode === currentMode) {
+        // Deactivate if clicking the same mode
+        console.log("Deactivating mode");
+        setMode(null);
+      } else {
+        console.log(`Activating mode: ${mode}`);
+        setMode(mode);
+      }
+    });
+  });
+  
+  // Initialize cursor mode as active by default
+  const cursorButton = Array.from(drawingButtons).find(btn => btn.dataset.mode === "cursor");
+  if (cursorButton) {
+    console.log("Setting initial cursor mode");
+    setMode("cursor");
+  } else {
+    console.warn("Cursor button not found!");
+  }
+  
+  // Load geometry on page load (after a short delay to ensure geometryViewer is ready)
+  setTimeout(() => {
+    if (getSessionId() && geometryViewer) {
+      loadGeometry();
+    }
+  }, 200);
+}
+
 function setupToolBlockToggles() {
   const toolBlocks = Array.from(document.querySelectorAll(".tool-block"));
   if (toolBlocks.length === 0) {
@@ -654,12 +1006,49 @@ function setupToolBlockToggles() {
 }
 
 function initializeDrafterPage() {
+  console.log("initializeDrafterPage called");
+  console.log("setupDrawingControls function available:", typeof setupDrawingControls);
+  
   initializeGeometryViewer();
   setupGeometryControls();
   setupUploadControls();
   setupAlignmentControls();
   setupExportControls();
   setupToolBlockToggles();
+  
+  // Setup drawing controls after a short delay to ensure DOM is ready
+  console.log("Setting up drawing controls...");
+  console.log("Drawing controls container exists:", !!document.querySelector(".drawing-controls"));
+  
+  // Try immediate setup first
+  if (typeof setupDrawingControls === "function") {
+    try {
+      console.log("Calling setupDrawingControls...");
+      setupDrawingControls();
+    } catch (error) {
+      console.error("Error in immediate setupDrawingControls:", error);
+      // Retry after delay if immediate setup fails
+      setTimeout(() => {
+        console.log("Timeout callback executed, calling setupDrawingControls");
+        try {
+          setupDrawingControls();
+        } catch (retryError) {
+          console.error("Error in delayed setupDrawingControls:", retryError);
+        }
+      }, 100);
+    }
+  } else {
+    console.error("setupDrawingControls is not a function! Type:", typeof setupDrawingControls);
+    // Retry after delay
+    setTimeout(() => {
+      if (typeof setupDrawingControls === "function") {
+        console.log("setupDrawingControls now available, calling...");
+        setupDrawingControls();
+      } else {
+        console.error("setupDrawingControls still not available after delay");
+      }
+    }, 200);
+  }
   
   // Load processed_drawing if available in session data
   if (window.sessionData && window.sessionData.paths) {
@@ -695,10 +1084,46 @@ function initializeDrafterPage() {
   }
 }
 
+console.log("=== DRAFTER SCRIPT LOADED ===");
+console.log("Script loaded, document.readyState:", document.readyState);
+console.log("setupDrawingControls function defined:", typeof setupDrawingControls);
+console.log("initializeDrafterPage function defined:", typeof initializeDrafterPage);
+
+// Force check if functions are hoisted
+if (typeof setupDrawingControls === "undefined") {
+  console.error("CRITICAL: setupDrawingControls is not defined!");
+}
+if (typeof initializeDrafterPage === "undefined") {
+  console.error("CRITICAL: initializeDrafterPage is not defined!");
+}
+
+// Check if drawing controls exist in DOM
+const checkDrawingControls = () => {
+  const controls = document.querySelector(".drawing-controls");
+  console.log("Drawing controls in DOM:", !!controls);
+  if (controls) {
+    const buttons = controls.querySelectorAll(".drawing-btn");
+    console.log("Drawing buttons found:", buttons.length);
+  }
+};
+
+// Check immediately
+checkDrawingControls();
+
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initializeDrafterPage);
+  console.log("Document still loading, waiting for DOMContentLoaded");
+  document.addEventListener("DOMContentLoaded", () => {
+    console.log("DOMContentLoaded event fired");
+    checkDrawingControls();
+    initializeDrafterPage();
+  });
 } else {
-  initializeDrafterPage();
+  console.log("Document already loaded, calling initializeDrafterPage immediately");
+  // Wait a bit for DOM to be fully ready
+  setTimeout(() => {
+    checkDrawingControls();
+    initializeDrafterPage();
+  }, 10);
 }
 
 window.loadGeometryData = function loadGeometryData(jsonData) {
@@ -708,4 +1133,8 @@ window.loadGeometryData = function loadGeometryData(jsonData) {
   }
   geometryViewer.loadData(jsonData);
 };
+
+// Expose setupDrawingControls for debugging
+window.setupDrawingControls = setupDrawingControls;
+console.log("setupDrawingControls function exposed to window:", typeof window.setupDrawingControls);
 

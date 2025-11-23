@@ -1,0 +1,130 @@
+.property-editor {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  min-width: 168px;
+  max-width: 240px;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.property-editor__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+  border-radius: 8px 8px 0 0;
+}
+
+.property-editor__header h3 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.property-editor__close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.property-editor__close:hover {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+.property-editor__body {
+  padding: 10px;
+}
+
+.property-editor__field {
+  margin-bottom: 10px;
+}
+
+.property-editor__field:last-child {
+  margin-bottom: 0;
+}
+
+.property-editor__field label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.property-editor__field input[type="number"],
+.property-editor__field input[type="text"] {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: #111827;
+  background: #ffffff;
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.property-editor__field input[type="number"]:focus,
+.property-editor__field input[type="text"]:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.property-editor__footer {
+  display: flex;
+  gap: 6px;
+  padding: 7px 10px;
+  border-top: 1px solid #e5e7eb;
+  background: #f9fafb;
+  border-radius: 0 0 8px 8px;
+  justify-content: flex-end;
+}
+
+.property-editor__btn {
+  padding: 5px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.property-editor__btn--save {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+
+.property-editor__btn--save:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.property-editor__btn--cancel {
+  background: #ffffff;
+  color: #374151;
+}
+
+.property-editor__btn--cancel:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
