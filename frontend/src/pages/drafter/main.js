@@ -52,165 +52,114 @@ function calculateDistanceFeet(dx, dy) {
   return distance.toFixed(4);
 }
 
+// SelectionSet class for managing multiple selected objects
+class SelectionSet {
+  constructor() {
+    this.objects = []; // Array of { type: "point"|"segment", id: string, ... }
+    this.createdAt = new Date();
+  }
+  
+  /**
+   * Add an object to the selection set
+   * @param {Object} obj - Object with type and id properties
+   */
+  add(obj) {
+    if (!obj || !obj.type || !obj.id) {
+      console.warn("SelectionSet.add: Invalid object", obj);
+      return;
+    }
+    
+    // Check if object already exists
+    const exists = this.objects.some(
+      o => o.type === obj.type && o.id === obj.id
+    );
+    
+    if (!exists) {
+      this.objects.push(obj);
+    }
+  }
+  
+  /**
+   * Add multiple objects to the selection set
+   * @param {Array} objects - Array of objects with type and id properties
+   */
+  addMultiple(objects) {
+    if (!Array.isArray(objects)) {
+      console.warn("SelectionSet.addMultiple: Expected array", objects);
+      return;
+    }
+    
+    objects.forEach(obj => this.add(obj));
+  }
+  
+  /**
+   * Remove an object from the selection set
+   * @param {string} type - Object type
+   * @param {string} id - Object id
+   */
+  remove(type, id) {
+    this.objects = this.objects.filter(
+      o => !(o.type === type && o.id === id)
+    );
+  }
+  
+  /**
+   * Clear all objects from the selection set
+   */
+  clear() {
+    this.objects = [];
+  }
+  
+  /**
+   * Check if selection set is empty
+   * @returns {boolean}
+   */
+  isEmpty() {
+    return this.objects.length === 0;
+  }
+  
+  /**
+   * Get count of objects in selection set
+   * @returns {number}
+   */
+  getCount() {
+    return this.objects.length;
+  }
+  
+  /**
+   * Get all objects grouped by type
+   * @returns {Object} Object with keys as types and values as arrays of objects
+   */
+  getByType() {
+    const grouped = {};
+    this.objects.forEach(obj => {
+      if (!grouped[obj.type]) {
+        grouped[obj.type] = [];
+      }
+      grouped[obj.type].push(obj);
+    });
+    return grouped;
+  }
+  
+  /**
+   * Get array of objects for deletion (with type and id)
+   * @returns {Array} Array of { type, id } objects
+   */
+  getDeletionList() {
+    return this.objects.map(obj => ({
+      type: obj.type,
+      id: obj.id
+    }));
+  }
+}
+
 let geometryViewer = null;
 let propertyEditor = null;
 let referenceLineActive = false;
+let snapEnabled = false;
+let currentSelectionSet = null; // Current SelectionSet instance
 const actionHistory = [];
 let currentRasterObjectUrl = null;
-
-const sampleData = {
-  metadata: {
-    source: "LandXML",
-    project: "Site",
-    units: {
-      distance: "foot",
-      area: "squareFoot",
-      angle: "decimal degrees"
-    }
-  },
-  collections: [
-    {
-      id: "parcels",
-      title: "Parcels",
-      features: [
-        {
-          id: "parcel-basic-1",
-          name: "Basic : 1",
-          featureType: "parcel",
-          geometry: {
-            type: "Polygon",
-            isClosed: true,
-            segments: [
-              {
-                segmentType: "line",
-                start: { x: 7412.229908, y: 2736.843767 },
-                end: { x: 7401.119714, y: 2784.79241 },
-                length: 49.218988,
-                bearing: 346.954201
-              },
-              {
-                segmentType: "line",
-                start: { x: 7401.119714, y: 2784.79241 },
-                end: { x: 7326.577204, y: 2793.485871 },
-                length: 75.047731,
-                bearing: 276.652025
-              },
-              {
-                segmentType: "line",
-                start: { x: 7326.577204, y: 2793.485871 },
-                end: { x: 7326.577204, y: 2728.238201 },
-                length: 65.24767,
-                bearing: 180
-              },
-              {
-                segmentType: "line",
-                start: { x: 7326.577204, y: 2728.238201 },
-                end: { x: 7412.229908, y: 2736.843767 },
-                length: 86.083921,
-                bearing: 84.26272
-              }
-            ]
-          },
-          attributes: {
-            area: 4533.132753,
-            description: ""
-          },
-          style: {
-            stroke: "#3366ff",
-            width: 1,
-            fill: "rgba(51,102,255,0.2)"
-          }
-        },
-        {
-          id: "parcel-property-1",
-          name: "Property : 1",
-          featureType: "parcel",
-          geometry: {
-            type: "Polygon",
-            isClosed: true,
-            segments: [
-              {
-                segmentType: "line",
-                start: { x: 7310.357352, y: 2667.812527 },
-                end: { x: 7335.094869, y: 2514.485365 },
-                length: 155.309895,
-                bearing: 170.834984
-              },
-              {
-                segmentType: "line",
-                start: { x: 7335.094869, y: 2514.485365 },
-                end: { x: 7413.632974, y: 2514.485365 },
-                length: 78.538106,
-                bearing: 90
-              },
-              {
-                segmentType: "arc",
-                start: { x: 7413.632974, y: 2514.485365 },
-                end: { x: 7463.632974, y: 2564.485365 },
-                center: { x: 7413.632974, y: 2564.485365 },
-                radius: 50,
-                rotation: "cw",
-                delta: 90,
-                length: 78.539816
-              },
-              {
-                segmentType: "line",
-                start: { x: 7463.632974, y: 2564.485365 },
-                end: { x: 7463.632974, y: 2611.042655 },
-                length: 46.55729,
-                bearing: 0
-              },
-              {
-                segmentType: "line",
-                start: { x: 7463.632974, y: 2611.042655 },
-                end: { x: 7310.357352, y: 2667.812527 },
-                length: 163.451016,
-                bearing: 290.323506
-              }
-            ]
-          },
-          attributes: {
-            area: 16717.626216,
-            description: ""
-          },
-          style: {
-            stroke: "#33aa55",
-            width: 1.5,
-            fill: "rgba(51,170,85,0.18)"
-          }
-        }
-      ]
-    },
-    {
-      id: "alignments",
-      title: "Alignments",
-      features: [
-        {
-          id: "alignment-1",
-          name: "Alignment - (1)",
-          featureType: "centerline",
-          geometry: {
-            type: "LineString",
-            isClosed: false,
-            segments: [
-              {
-                segmentType: "line",
-                start: { x: 7269.040669, y: 2722.457478 },
-                end: { x: 7450.893718, y: 2740.728338 },
-                length: 182.768585,
-                bearing: 84.26272
-              }
-            ]
-          },
-          attributes: {
-            speedLimit: 60,
-            stationStart: 0
-          }
-        }
-      ]
-    }
-  ]
-};
 
 function recordAction(description) {
   actionHistory.push({
@@ -256,6 +205,10 @@ function initializeGeometryViewer() {
   geometryViewer.onObjectClick = (object, position) => {
     console.log("Object clicked:", object, position);
     
+    // Store selected object (already stored in geometryViewer.selectedObject by geometry-viewer)
+    // But ensure it's set here as well for consistency
+    geometryViewer.selectedObject = object;
+    
     // If it's a segment, calculate properties if they're missing
     if (object.type === "segment") {
       if (!object.quadrant || !object.bearing || !object.distance) {
@@ -277,6 +230,10 @@ function initializeGeometryViewer() {
       () => {
         // Cancel handler
         console.log("Property editor cancelled");
+        // Re-render to show selected state
+        if (geometryViewer) {
+          geometryViewer.render();
+        }
       }
     );
   };
@@ -472,28 +429,6 @@ function setupGeometryControls() {
     button.addEventListener("click", () => {
       if (geometryViewer) {
         geometryViewer.resetView();
-      }
-    });
-  });
-
-  const sampleButtons = [
-    document.getElementById("load-sample-data"),
-    document.getElementById("load-sample")
-  ];
-  sampleButtons.forEach((button) => {
-    if (!button) {
-      return;
-    }
-    button.addEventListener("click", () => {
-      if (!geometryViewer) {
-        // eslint-disable-next-line no-alert
-        alert("Viewer is not initialized yet.");
-        return;
-      }
-      geometryViewer.loadData(sampleData);
-      const textarea = document.getElementById("json-input");
-      if (textarea) {
-        textarea.value = JSON.stringify(sampleData, null, 2);
       }
     });
   });
@@ -1021,6 +956,10 @@ function setupDrawingControls() {
     console.log(`updateButtonStates called with activeMode: ${activeMode}`);
     drawingButtons.forEach((button) => {
       const mode = button.dataset.mode;
+      // Skip toggle buttons that maintain their own state
+      if (mode === "snap" || mode === "undo" || mode === "delete" || mode === "redo" || mode === "layers" || mode === "table") {
+        return;
+      }
       if (mode === activeMode) {
         console.log(`Activating button: ${mode}`);
         button.dataset.state = "active";
@@ -1040,11 +979,139 @@ function setupDrawingControls() {
     });
   };
   
+  // Handle polygon selection completion
+  const handlePolygonSelect = (polygonPoints) => {
+    console.log("Polygon selection completed with points:", polygonPoints);
+    // Find all objects within the polygon
+    if (!geometryViewer || !geometryViewer.data) {
+      return;
+    }
+    
+    const selectedObjects = [];
+    
+    // Check points
+    if (geometryViewer.data.points) {
+      geometryViewer.data.points.forEach((point) => {
+        if (isPointInPolygon(point.x, point.y, polygonPoints)) {
+          selectedObjects.push({ type: "point", ...point });
+        }
+      });
+    }
+    
+    // Check segments
+    if (geometryViewer.data.segments) {
+      geometryViewer.data.segments.forEach((segment) => {
+        // Handle both data formats: {startX, startY, endX, endY} and {start: {x, y}, end: {x, y}}
+        let startX, startY, endX, endY;
+        
+        if (segment.start && segment.end) {
+          // New format: {start: {x, y}, end: {x, y}}
+          startX = segment.start.x;
+          startY = segment.start.y;
+          endX = segment.end.x;
+          endY = segment.end.y;
+        } else if (segment.startX !== undefined && segment.startY !== undefined) {
+          // Old format: {startX, startY, endX, endY}
+          startX = segment.startX;
+          startY = segment.startY;
+          endX = segment.endX;
+          endY = segment.endY;
+        } else {
+          // Skip invalid segment
+          return;
+        }
+        
+        // Check if segment start or end point is in polygon, or if segment intersects polygon
+        if (isPointInPolygon(startX, startY, polygonPoints) ||
+            isPointInPolygon(endX, endY, polygonPoints) ||
+            segmentIntersectsPolygon({ startX, startY, endX, endY }, polygonPoints)) {
+          selectedObjects.push({ 
+            type: "segment", 
+            id: segment.id,
+            startX, 
+            startY, 
+            endX, 
+            endY,
+            ...segment 
+          });
+        }
+      });
+    }
+    
+    console.log("Selected objects:", selectedObjects);
+    recordAction(`Polygon selection: ${selectedObjects.length} object(s) selected.`);
+    
+    // Create or update SelectionSet with selected objects
+    if (!currentSelectionSet) {
+      currentSelectionSet = new SelectionSet();
+    }
+    currentSelectionSet.clear();
+    currentSelectionSet.addMultiple(selectedObjects);
+    
+    console.log("SelectionSet created/updated:", currentSelectionSet);
+    
+    // Store selected objects in geometryViewer for rendering
+    if (geometryViewer) {
+      geometryViewer.selectedObjects = selectedObjects;
+      // Force re-render to show selected objects
+      geometryViewer.render();
+    }
+  };
+  
+  // Helper function to check if point is inside polygon
+  const isPointInPolygon = (x, y, polygon) => {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const xi = polygon[i].x;
+      const yi = polygon[i].y;
+      const xj = polygon[j].x;
+      const yj = polygon[j].y;
+      
+      const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
+  
+  // Helper function to check if segment intersects polygon
+  const segmentIntersectsPolygon = (segment, polygon) => {
+    // Check if segment intersects any edge of the polygon
+    for (let i = 0; i < polygon.length; i++) {
+      const j = (i + 1) % polygon.length;
+      if (segmentsIntersect(
+        segment.startX, segment.startY, segment.endX, segment.endY,
+        polygon[i].x, polygon[i].y, polygon[j].x, polygon[j].y
+      )) {
+        return true;
+      }
+    }
+    return false;
+  };
+  
+  // Helper function to check if two segments intersect
+  const segmentsIntersect = (x1, y1, x2, y2, x3, y3, x4, y4) => {
+    const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if (denom === 0) return false;
+    
+    const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+    const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+    
+    return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+  };
+
   // Handle mode change
   const setMode = (mode) => {
     console.log(`setMode called with: ${mode}`);
     currentMode = mode;
     updateButtonStates(mode);
+    
+    // Clear SelectionSet when switching to drawing modes (but keep it for cursor and polygon-select)
+    if (mode !== "cursor" && mode !== "polygon-select" && mode !== null) {
+      if (currentSelectionSet) {
+        console.log("Clearing SelectionSet when switching to drawing mode");
+        currentSelectionSet.clear();
+      }
+    }
     
     if (geometryViewer) {
       if (mode === "points") {
@@ -1054,9 +1121,24 @@ function setupDrawingControls() {
         console.log("Setting geometryViewer to segments mode");
         console.log("handleSegmentClick type:", typeof handleSegmentClick, handleSegmentClick);
         geometryViewer.setDrawingMode("segments", handleSegmentClick);
+      } else if (mode === "polygon-select") {
+        console.log("Setting geometryViewer to polygon-select mode");
+        // Create new SelectionSet when starting polygon selection
+        currentSelectionSet = new SelectionSet();
+        console.log("New SelectionSet created for polygon selection");
+        
+        // Set polygon selection mode if geometryViewer supports it
+        if (typeof geometryViewer.setPolygonSelectMode === "function") {
+          geometryViewer.setPolygonSelectMode(handlePolygonSelect);
+        } else {
+          console.warn("Polygon select mode not yet implemented in geometryViewer");
+          // For now, just set drawing mode to null and show a message
+          geometryViewer.setDrawingMode(null);
+        }
       } else if (mode === "cursor" || mode === null) {
         console.log("Setting geometryViewer to cursor mode (null)");
         geometryViewer.setDrawingMode(null);
+        // Keep SelectionSet when switching to cursor mode (user might want to delete selected objects)
       } else {
         // Other modes will be implemented later
         console.log("Setting geometryViewer to null (other mode)");
@@ -1098,6 +1180,189 @@ function setupDrawingControls() {
     }
   };
   
+  // Handle delete action
+  const handleDelete = async () => {
+    const sessionId = getSessionId();
+    if (!sessionId) {
+      console.error("No session ID available");
+      return;
+    }
+    
+    // Check if we have a SelectionSet with objects
+    console.log("handleDelete: currentSelectionSet:", currentSelectionSet);
+    console.log("handleDelete: currentSelectionSet?.isEmpty():", currentSelectionSet?.isEmpty());
+    
+    if (currentSelectionSet && !currentSelectionSet.isEmpty()) {
+      const deletionList = currentSelectionSet.getDeletionList();
+      console.log(`Deleting ${deletionList.length} objects from SelectionSet:`, deletionList);
+      
+      if (deletionList.length === 0) {
+        console.warn("SelectionSet is empty");
+        return;
+      }
+      
+      // Delete all objects from SelectionSet sequentially to avoid conflicts
+      // Sort objects: delete segments first, then points (to avoid dependency issues)
+      const sortedDeletionList = [...deletionList].sort((a, b) => {
+        if (a.type === 'segment' && b.type === 'point') return -1;
+        if (a.type === 'point' && b.type === 'segment') return 1;
+        return 0;
+      });
+      
+      const results = [];
+      const failed = [];
+      
+      for (let i = 0; i < sortedDeletionList.length; i++) {
+        const obj = sortedDeletionList[i];
+        try {
+          console.log(`Deleting ${i + 1}/${deletionList.length}: ${obj.type}/${obj.id}`);
+          const response = await fetch(
+            `/api/geometry/${sessionId}/${obj.type}/${obj.id}`,
+            {
+              method: "DELETE"
+            }
+          );
+          
+          let result;
+          try {
+            const responseText = await response.text();
+            if (responseText) {
+              try {
+                result = JSON.parse(responseText);
+              } catch (parseError) {
+                console.error(`Failed to parse JSON response for ${obj.type}/${obj.id}:`, parseError, "Response text:", responseText);
+                result = { 
+                  success: false, 
+                  message: `Invalid JSON response: ${responseText.substring(0, 100)}` 
+                };
+              }
+            } else {
+              result = { success: response.ok };
+            }
+          } catch (error) {
+            console.error(`Failed to read response for ${obj.type}/${obj.id}:`, error);
+            result = { 
+              success: false, 
+              message: `Failed to read response: ${error.message}` 
+            };
+          }
+          
+          // Check if deletion was successful
+          // Backend returns {success: true} on success, or {success: false, message: "..."} on error
+          // Also check HTTP status code
+          if (response.ok && (result.success === true || result.success === undefined)) {
+            results.push({ obj, success: true, result });
+            console.log(`Successfully deleted ${obj.type}/${obj.id}`);
+          } else {
+            const errorMsg = result.message || result.error || `HTTP ${response.status} ${response.statusText}`;
+            console.error(`Failed to delete ${obj.type}/${obj.id}:`, errorMsg, "Full response:", result);
+            failed.push({ obj, error: errorMsg, result, status: response.status });
+          }
+          
+          // Small delay between deletions to allow backend to process
+          if (i < sortedDeletionList.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
+        } catch (error) {
+          console.error(`Error deleting ${obj.type}/${obj.id}:`, error);
+          failed.push({ obj, error: error.message || "Network error", exception: error });
+          
+          // Small delay even on error
+          if (i < sortedDeletionList.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
+        }
+      }
+      
+      // Report results
+      const successCount = results.length;
+      const failCount = failed.length;
+      const totalCount = sortedDeletionList.length;
+      
+      if (failed.length > 0) {
+        console.error(`Deletion completed: ${successCount} succeeded, ${failCount} failed out of ${totalCount} total`);
+        console.error("Failed deletions:", failed);
+        // Show detailed error information
+        const errorDetails = failed.map(f => `${f.obj.type}/${f.obj.id}: ${f.error}`).join('\n');
+        console.error("Error details:\n" + errorDetails);
+        // eslint-disable-next-line no-alert
+        alert(`Deleted ${successCount} object(s) successfully, but ${failCount} object(s) failed to delete.\n\nCheck console for details.`);
+      } else {
+        console.log(`Successfully deleted all ${totalCount} object(s)`);
+        recordAction(`Deleted ${totalCount} object(s) from SelectionSet.`);
+      }
+      
+      // Clear SelectionSet
+      currentSelectionSet.clear();
+      
+      // Clear selectedObjects in geometryViewer
+      if (geometryViewer) {
+        geometryViewer.selectedObjects = null;
+        geometryViewer.selectedObject = null;
+      }
+      
+      // Close property editor if open
+      if (propertyEditor) {
+        propertyEditor.hide();
+      }
+      
+      // Reload geometry to show updated state (only if at least one deletion succeeded)
+      if (successCount > 0) {
+        await loadGeometry(true);
+      }
+      
+      return;
+    }
+    
+    // Fallback to single object deletion (backward compatibility)
+    if (!geometryViewer || !geometryViewer.selectedObject) {
+      console.warn("No object selected for deletion");
+      return;
+    }
+    
+    const selectedObject = geometryViewer.selectedObject;
+    
+    try {
+      const response = await fetch(
+        `/api/geometry/${sessionId}/${selectedObject.type}/${selectedObject.id}`,
+        {
+          method: "DELETE"
+        }
+      );
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Delete successful:", result);
+        
+        // Clear selection
+        geometryViewer.selectedObject = null;
+        geometryViewer.selectedObjects = null;
+        
+        // Clear SelectionSet if it exists
+        if (currentSelectionSet) {
+          currentSelectionSet.clear();
+        }
+        
+        // Close property editor if open
+        if (propertyEditor) {
+          propertyEditor.hide();
+        }
+        
+        // Reload geometry to show updated state
+        await loadGeometry(true);
+      } else {
+        const errorData = await response.json().catch(() => ({ message: "Unknown error" }));
+        console.error("Failed to delete:", errorData);
+        // eslint-disable-next-line no-alert
+        alert(errorData.message || "Failed to delete object");
+      }
+    } catch (error) {
+      console.error("Error deleting object:", error);
+      // eslint-disable-next-line no-alert
+      alert("An error occurred while deleting the object");
+    }
+  };
+  
   // Add click handlers to buttons
   drawingButtons.forEach((button) => {
     const mode = button.dataset.mode;
@@ -1113,6 +1378,22 @@ function setupDrawingControls() {
         return;
       }
       
+      if (mode === "delete") {
+        handleDelete();
+        return;
+      }
+      
+      if (mode === "snap") {
+        // Toggle snap mode
+        snapEnabled = !snapEnabled;
+        button.dataset.state = snapEnabled ? "active" : "inactive";
+        button.setAttribute("aria-pressed", snapEnabled ? "true" : "false");
+        button.classList.toggle("active", snapEnabled);
+        console.log(`Snap ${snapEnabled ? "enabled" : "disabled"}`);
+        recordAction(`Snap ${snapEnabled ? "enabled" : "disabled"}.`);
+        return;
+      }
+      
       if (mode === currentMode) {
         // Deactivate if clicking the same mode
         console.log("Deactivating mode");
@@ -1122,6 +1403,59 @@ function setupDrawingControls() {
         setMode(mode);
       }
     });
+  });
+  
+  // Handle keyboard shortcuts (Del key for delete, Enter for polygon completion)
+  document.addEventListener("keydown", (event) => {
+    // Check if Del or Delete key is pressed
+    if (event.key === "Delete" || event.key === "Del" || (event.keyCode === 46)) {
+      // Don't delete if user is typing in an input field
+      const activeElement = document.activeElement;
+      if (activeElement && (
+        activeElement.tagName === "INPUT" ||
+        activeElement.tagName === "TEXTAREA" ||
+        activeElement.isContentEditable
+      )) {
+        return;
+      }
+      
+      event.preventDefault();
+      handleDelete();
+    }
+    
+    // Check if Enter key is pressed for polygon selection completion
+    if (event.key === "Enter" && currentMode === "polygon-select") {
+      // Don't complete if user is typing in an input field
+      const activeElement = document.activeElement;
+      if (activeElement && (
+        activeElement.tagName === "INPUT" ||
+        activeElement.tagName === "TEXTAREA" ||
+        activeElement.isContentEditable
+      )) {
+        return;
+      }
+      
+      if (geometryViewer && geometryViewer.polygonSelectPoints && geometryViewer.polygonSelectPoints.length >= 3) {
+        event.preventDefault();
+        if (geometryViewer.onPolygonSelect) {
+          geometryViewer.onPolygonSelect(geometryViewer.polygonSelectPoints);
+          geometryViewer.polygonSelectPoints = [];
+          geometryViewer.currentMousePosition = null;
+          geometryViewer.render();
+        }
+      }
+    }
+    
+    // Check if Escape key is pressed to cancel polygon selection
+    if (event.key === "Escape" && currentMode === "polygon-select") {
+      if (geometryViewer && geometryViewer.polygonSelectPoints && geometryViewer.polygonSelectPoints.length > 0) {
+        event.preventDefault();
+        geometryViewer.polygonSelectPoints = [];
+        geometryViewer.currentMousePosition = null;
+        geometryViewer.render();
+        console.log("Polygon selection cancelled");
+      }
+    }
   });
   
   // Initialize cursor mode as active by default

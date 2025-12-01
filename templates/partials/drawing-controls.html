@@ -53,6 +53,26 @@
     <button
         class="drawing-btn"
         type="button"
+        data-mode="snap"
+        data-state="inactive"
+        aria-pressed="false"
+        title="Toggle snap (magnet)">
+        <span class="drawing-btn__icon" aria-hidden="true">🧲</span>
+        <span class="drawing-btn__label">Snap</span>
+    </button>
+    <button
+        class="drawing-btn"
+        type="button"
+        data-mode="polygon-select"
+        data-state="inactive"
+        aria-pressed="false"
+        title="Select by polygon">
+        <span class="drawing-btn__icon" aria-hidden="true">⬟</span>
+        <span class="drawing-btn__label">Polygon</span>
+    </button>
+    <button
+        class="drawing-btn"
+        type="button"
         data-mode="undo"
         data-state="inactive"
         aria-pressed="false"

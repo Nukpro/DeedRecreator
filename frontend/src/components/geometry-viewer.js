@@ -37,11 +37,17 @@ export default class GeometryViewer {
     this.coordDisplay = null;
     
     // Drawing mode state
-    this.drawingMode = null; // "points", "segments", "arcs", etc.
+    this.drawingMode = null; // "points", "segments", "arcs", "polygon-select", etc.
     this.onPointClick = null; // Callback for point clicks
     this.onSegmentClick = null; // Callback for segment clicks (two points)
     this.onObjectClick = null; // Callback for object clicks (cursor mode)
+    this.onPolygonSelect = null; // Callback for polygon selection completion
     this.segmentStartPoint = null; // First point for segment drawing
+    this.currentMousePosition = null; // Current mouse position in world coordinates (for preview line)
+    this.selectedObject = null; // Currently selected object (point, segment, etc.)
+    this.hoveredObject = null; // Currently hovered object (point, segment, etc.)
+    this.polygonSelectPoints = []; // Points for polygon selection
+    this.selectedObjects = null; // Array of selected objects (from SelectionSet)
 
     this.init();
   }
@@ -78,6 +84,9 @@ export default class GeometryViewer {
 
   loadData(jsonData, preserveView = false) {
     this.data = jsonData;
+    // Clear selection and hover when loading new data
+    this.selectedObject = null;
+    this.hoveredObject = null;
     if (preserveView) {
       // Update bounds and render without changing view
       this.calculateBounds();
@@ -243,7 +252,12 @@ export default class GeometryViewer {
       }
     }
 
-    if (this.data && this.data.collections) {
+    // Render segments if they exist in data (preferred for session-based geometry)
+    // Only render collections if segments are not present (for backward compatibility)
+    if (this.data && this.data.segments && Array.isArray(this.data.segments) && this.data.segments.length > 0) {
+      // Render segments directly - skip collections to avoid duplicate rendering
+    } else if (this.data && this.data.collections) {
+      // Render collections only if segments are not present
       this.data.collections.forEach((collection) => {
         if (collection.features) {
           collection.features.forEach((feature) => {
@@ -257,14 +271,37 @@ export default class GeometryViewer {
     if (this.data && this.data.segments && Array.isArray(this.data.segments)) {
       this.data.segments.forEach((segment) => {
         if (segment.segmentType === "line" && segment.start && segment.end) {
+          // Create segment object for state checking - must match structure used in selection
+          const segmentObject = {
+            type: "segment",
+            id: segment.id,
+            startX: segment.start.x,
+            startY: segment.start.y,
+            endX: segment.end.x,
+            endY: segment.end.y
+          };
+          const state = this.getObjectState(segmentObject);
+          const style = this.getSegmentStyle(state, segment.attributes?.color || "#0000ff");
+          
           const startCanvas = this.worldToCanvas(segment.start.x, segment.start.y);
           const endCanvas = this.worldToCanvas(segment.end.x, segment.end.y);
           
+          // For selected state, draw yellow outline first
+          if (state === 'selected') {
+            this.ctx.beginPath();
+            this.ctx.moveTo(startCanvas.x, startCanvas.y);
+            this.ctx.lineTo(endCanvas.x, endCanvas.y);
+            this.ctx.strokeStyle = "#ffff00"; // Yellow outline
+            this.ctx.lineWidth = style.lineWidth + 4; // Thicker outline for visibility
+            this.ctx.stroke();
+          }
+          
+          // Draw main line
           this.ctx.beginPath();
           this.ctx.moveTo(startCanvas.x, startCanvas.y);
           this.ctx.lineTo(endCanvas.x, endCanvas.y);
-          this.ctx.strokeStyle = segment.attributes?.color || "#0000ff";
-          this.ctx.lineWidth = 2;
+          this.ctx.strokeStyle = style.color;
+          this.ctx.lineWidth = style.lineWidth;
           this.ctx.stroke();
         }
       });
@@ -274,13 +311,87 @@ export default class GeometryViewer {
     if (this.data && this.data.points && Array.isArray(this.data.points)) {
       this.data.points.forEach((point) => {
         if (point.x !== undefined && point.y !== undefined) {
-          this.renderPoint(point.x, point.y, {
-            size: 4,
-            color: "#ff0000",
-            stroke: "#ffffff",
-            strokeWidth: 1
-          });
+          const pointObject = {
+            type: "point",
+            id: point.id,
+            x: point.x,
+            y: point.y
+          };
+          const state = this.getObjectState(pointObject);
+          const style = this.getPointStyle(state);
+          this.renderPoint(point.x, point.y, style);
         }
+      });
+    }
+    
+    // Render preview line when drawing segments (from first point to current mouse position)
+    if (this.drawingMode === "segments" && this.segmentStartPoint && this.currentMousePosition) {
+      const startCanvas = this.worldToCanvas(this.segmentStartPoint.x, this.segmentStartPoint.y);
+      const endCanvas = this.worldToCanvas(this.currentMousePosition.x, this.currentMousePosition.y);
+      
+      this.ctx.beginPath();
+      this.ctx.moveTo(startCanvas.x, startCanvas.y);
+      this.ctx.lineTo(endCanvas.x, endCanvas.y);
+      this.ctx.strokeStyle = "#0000ff"; // Blue color for preview line
+      this.ctx.lineWidth = 2;
+      this.ctx.setLineDash([5, 5]); // Dashed line for preview
+      this.ctx.stroke();
+      this.ctx.setLineDash([]); // Reset line dash
+    }
+    
+    // Render polygon selection preview
+    if (this.drawingMode === "polygon-select" && this.polygonSelectPoints.length > 0) {
+      this.ctx.beginPath();
+      
+      // Draw polygon outline
+      for (let i = 0; i < this.polygonSelectPoints.length; i++) {
+        const point = this.polygonSelectPoints[i];
+        const canvasPos = this.worldToCanvas(point.x, point.y);
+        if (i === 0) {
+          this.ctx.moveTo(canvasPos.x, canvasPos.y);
+        } else {
+          this.ctx.lineTo(canvasPos.x, canvasPos.y);
+        }
+      }
+      
+      // Draw line to current mouse position if available
+      if (this.currentMousePosition) {
+        const currentCanvas = this.worldToCanvas(this.currentMousePosition.x, this.currentMousePosition.y);
+        this.ctx.lineTo(currentCanvas.x, currentCanvas.y);
+      }
+      
+      // Close polygon if we have at least 3 points
+      if (this.polygonSelectPoints.length >= 3) {
+        const firstPoint = this.polygonSelectPoints[0];
+        const firstCanvas = this.worldToCanvas(firstPoint.x, firstPoint.y);
+        if (!this.currentMousePosition) {
+          this.ctx.lineTo(firstCanvas.x, firstCanvas.y);
+        }
+      }
+      
+      // Draw polygon fill
+      this.ctx.fillStyle = "rgba(0, 100, 255, 0.2)"; // Light blue fill
+      this.ctx.fill();
+      
+      // Draw polygon outline
+      this.ctx.strokeStyle = "#0064ff"; // Blue outline
+      this.ctx.lineWidth = 2;
+      this.ctx.setLineDash([5, 5]); // Dashed line
+      this.ctx.stroke();
+      this.ctx.setLineDash([]); // Reset line dash
+      
+      // Draw polygon points
+      this.polygonSelectPoints.forEach((point) => {
+        const canvasPos = this.worldToCanvas(point.x, point.y);
+        this.ctx.fillStyle = "#0064ff";
+        this.ctx.beginPath();
+        this.ctx.arc(canvasPos.x, canvasPos.y, 4, 0, 2 * Math.PI);
+        this.ctx.fill();
+        
+        // Draw point outline
+        this.ctx.strokeStyle = "#ffffff";
+        this.ctx.lineWidth = 1;
+        this.ctx.stroke();
       });
     }
   }
@@ -303,11 +414,25 @@ export default class GeometryViewer {
         const start = this.worldToCanvas(segment.start.x, segment.start.y);
         const end = this.worldToCanvas(segment.end.x, segment.end.y);
 
+        // Start a new path for each segment to avoid connecting them
         if (index === 0) {
           this.ctx.moveTo(start.x, start.y);
           firstPoint = start;
         } else {
-          this.ctx.lineTo(start.x, start.y);
+          // Check if this segment's start connects to the previous segment's end
+          const prevSegment = feature.geometry.segments[index - 1];
+          const prevEnd = this.worldToCanvas(prevSegment.end.x, prevSegment.end.y);
+          const tolerance = 0.1; // Small tolerance for floating point comparison
+          const dx = Math.abs(start.x - prevEnd.x);
+          const dy = Math.abs(start.y - prevEnd.y);
+          
+          if (dx < tolerance && dy < tolerance) {
+            // Segments are connected, continue the path
+            this.ctx.lineTo(start.x, start.y);
+          } else {
+            // Segments are not connected, start a new path
+            this.ctx.moveTo(start.x, start.y);
+          }
         }
         this.ctx.lineTo(end.x, end.y);
         lastPoint = end;
@@ -321,7 +446,20 @@ export default class GeometryViewer {
           this.ctx.moveTo(start.x, start.y);
           firstPoint = start;
         } else {
-          this.ctx.lineTo(start.x, start.y);
+          // Check if this segment's start connects to the previous segment's end
+          const prevSegment = feature.geometry.segments[index - 1];
+          const prevEnd = this.worldToCanvas(prevSegment.end.x, prevSegment.end.y);
+          const tolerance = 0.1; // Small tolerance for floating point comparison
+          const dx = Math.abs(start.x - prevEnd.x);
+          const dy = Math.abs(start.y - prevEnd.y);
+          
+          if (dx < tolerance && dy < tolerance) {
+            // Segments are connected, continue the path
+            this.ctx.lineTo(start.x, start.y);
+          } else {
+            // Segments are not connected, start a new path
+            this.ctx.moveTo(start.x, start.y);
+          }
         }
 
         const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
@@ -409,25 +547,50 @@ export default class GeometryViewer {
           // First point - store it
           this.segmentStartPoint = { x: worldPoint.x, y: worldPoint.y };
           console.log("Segment start point selected:", this.segmentStartPoint);
-      } else {
-        // Second point - create segment
-        const endPoint = { x: worldPoint.x, y: worldPoint.y };
-        console.log("Segment end point selected:", endPoint);
-        this.onSegmentClick(
-          this.segmentStartPoint.x,
-          this.segmentStartPoint.y,
-          endPoint.x,
-          endPoint.y,
-          canvasX,
-          canvasY
-        );
-          // Reset for next segment
+        } else {
+          // Second point - create segment
+          const endPoint = { x: worldPoint.x, y: worldPoint.y };
+          console.log("Segment end point selected:", endPoint);
+          this.onSegmentClick(
+            this.segmentStartPoint.x,
+            this.segmentStartPoint.y,
+            endPoint.x,
+            endPoint.y,
+            canvasX,
+            canvasY
+          );
+          // Reset for next segment (this clears the preview line)
           this.segmentStartPoint = null;
+          this.currentMousePosition = null;
         }
         return;
       } else {
         console.warn("onMouseDown: segments mode but onSegmentClick is not set!");
       }
+    }
+    
+    // If in polygon-select mode, handle polygon point selection
+    if (this.drawingMode === "polygon-select") {
+      event.preventDefault();
+      event.stopPropagation();
+      
+      // Check if double-click to finish polygon
+      if (event.detail === 2) {
+        if (this.polygonSelectPoints.length >= 3 && this.onPolygonSelect) {
+          // Complete polygon selection
+          this.onPolygonSelect(this.polygonSelectPoints);
+          this.polygonSelectPoints = [];
+          this.currentMousePosition = null;
+          this.render();
+        }
+        return;
+      }
+      
+      // Add point to polygon
+      this.polygonSelectPoints.push({ x: worldPoint.x, y: worldPoint.y });
+      console.log("Polygon point added:", worldPoint, "Total points:", this.polygonSelectPoints.length);
+      this.render();
+      return;
     }
     
     // If in cursor mode, check for object clicks
@@ -436,8 +599,17 @@ export default class GeometryViewer {
       if (clickedObject) {
         event.preventDefault();
         event.stopPropagation();
+        // Store selected object
+        this.selectedObject = clickedObject;
+        // Re-render to show selected state
+        this.render();
         this.onObjectClick(clickedObject, { x: event.clientX, y: event.clientY });
         return;
+      } else {
+        // Clear selection if clicking on empty space
+        this.selectedObject = null;
+        // Re-render to clear selected state
+        this.render();
       }
     }
     
@@ -537,6 +709,7 @@ export default class GeometryViewer {
     const rect = this.canvas.getBoundingClientRect();
     const currentX = event.clientX - rect.left;
     const currentY = event.clientY - rect.top;
+    const worldPoint = this.canvasToWorld(currentX, currentY);
 
     this.updateCoordDisplay(currentX, currentY);
 
@@ -546,10 +719,123 @@ export default class GeometryViewer {
 
       this.lastPanPoint = { x: currentX, y: currentY };
       this.render();
-    } else if (this.drawingMode === "points" || this.drawingMode === "segments") {
-      // Ensure crosshair cursor is maintained when not panning in drawing modes
-      this.canvas.style.cursor = "crosshair";
+    } else {
+      // Update hovered object when in cursor mode
+      let newHoveredObject = null;
+      if (this.drawingMode === null) {
+        newHoveredObject = this.findObjectAtPoint(worldPoint.x, worldPoint.y, currentX, currentY);
+      }
+      
+      // Only re-render if hover state changed
+      if (this.objectsEqual(this.hoveredObject, newHoveredObject) === false) {
+        this.hoveredObject = newHoveredObject;
+        this.render();
+      }
+      
+      // Update current mouse position for preview line
+      if (this.drawingMode === "segments" && this.segmentStartPoint) {
+        this.currentMousePosition = { x: worldPoint.x, y: worldPoint.y };
+        // Re-render to show preview line
+        this.render();
+      } else if (this.drawingMode === "polygon-select" && this.polygonSelectPoints.length > 0) {
+        // Update current mouse position for polygon preview
+        this.currentMousePosition = { x: worldPoint.x, y: worldPoint.y };
+        // Re-render to show polygon preview
+        this.render();
+      } else {
+        this.currentMousePosition = null;
+      }
+      
+      if (this.drawingMode === "points" || this.drawingMode === "segments" || this.drawingMode === "polygon-select") {
+        // Ensure crosshair cursor is maintained when not panning in drawing modes
+        this.canvas.style.cursor = "crosshair";
+      } else if (this.hoveredObject) {
+        // Show pointer cursor when hovering over an object
+        this.canvas.style.cursor = "pointer";
+      } else {
+        this.canvas.style.cursor = "grab";
+      }
     }
+  }
+  
+  // Helper function to compare objects for equality
+  objectsEqual(obj1, obj2) {
+    if (obj1 === obj2) return true;
+    if (!obj1 || !obj2) return false;
+    if (obj1.type !== obj2.type) return false;
+    if (obj1.id !== obj2.id) return false;
+    return true;
+  }
+  
+  // Get object state: 'inactive', 'hovered', or 'selected'
+  getObjectState(object) {
+    if (!object) return 'inactive';
+    
+    // Check single selected object
+    if (this.selectedObject && this.objectsEqual(object, this.selectedObject)) {
+      return 'selected';
+    }
+    
+    // Check multiple selected objects (from SelectionSet)
+    if (this.selectedObjects && Array.isArray(this.selectedObjects)) {
+      const isSelected = this.selectedObjects.some(selectedObj => 
+        this.objectsEqual(object, selectedObj)
+      );
+      if (isSelected) {
+        return 'selected';
+      }
+    }
+    
+    // Check hovered object
+    if (this.hoveredObject && this.objectsEqual(object, this.hoveredObject)) {
+      return 'hovered';
+    }
+    
+    return 'inactive';
+  }
+  
+  // Get style for point based on state
+  getPointStyle(state) {
+    const styles = {
+      inactive: {
+        size: 4,
+        color: "#ff0000",
+        stroke: "#ffffff",
+        strokeWidth: 1
+      },
+      hovered: {
+        size: 6,
+        color: "#ff6600",
+        stroke: "#ffffff",
+        strokeWidth: 2
+      },
+      selected: {
+        size: 7,
+        color: "#ff3300",
+        stroke: "#ffff00",
+        strokeWidth: 2.5
+      }
+    };
+    return styles[state] || styles.inactive;
+  }
+  
+  // Get style for segment based on state
+  getSegmentStyle(state, defaultColor = "#0000ff") {
+    const styles = {
+      inactive: {
+        color: defaultColor,
+        lineWidth: 2
+      },
+      hovered: {
+        color: "#0066ff",
+        lineWidth: 3
+      },
+      selected: {
+        color: "#0033ff",
+        lineWidth: 4
+      }
+    };
+    return styles[state] || styles.inactive;
   }
 
   onMouseUp() {
@@ -564,6 +850,13 @@ export default class GeometryViewer {
 
   onMouseLeave() {
     this.isPanning = false;
+    // Clear preview line when mouse leaves canvas
+    this.currentMousePosition = null;
+    // Clear hover state when mouse leaves canvas
+    if (this.hoveredObject) {
+      this.hoveredObject = null;
+      this.render();
+    }
     // Keep crosshair cursor if in drawing mode
     if (this.drawingMode === "points" || this.drawingMode === "segments") {
       this.canvas.style.cursor = "crosshair";
@@ -745,32 +1038,56 @@ export default class GeometryViewer {
     // Set drawing mode and callback for clicks
     this.drawingMode = mode;
     
-    // Reset segment start point when changing modes
+    // Reset segment start point and preview when changing modes
     if (mode !== "segments") {
       this.segmentStartPoint = null;
+    }
+    if (mode !== "segments" && mode !== "polygon-select") {
+      this.currentMousePosition = null;
+    }
+    
+    // Reset polygon selection when changing modes
+    if (mode !== "polygon-select") {
+      this.polygonSelectPoints = [];
     }
     
     // Set appropriate callback based on mode
     if (mode === "points") {
       this.onPointClick = callback;
       this.onSegmentClick = null;
+      this.onPolygonSelect = null;
     } else if (mode === "segments") {
       this.onPointClick = null;
       this.onSegmentClick = callback;
+      this.onPolygonSelect = null;
       console.log("setDrawingMode: segments mode set, onSegmentClick:", typeof this.onSegmentClick, this.onSegmentClick);
     } else {
       this.onPointClick = null;
       this.onSegmentClick = null;
+      if (mode !== "polygon-select") {
+        this.onPolygonSelect = null;
+      }
     }
     
     // Update cursor based on mode
-    if (mode === "points" || mode === "segments") {
+    if (mode === "points" || mode === "segments" || mode === "polygon-select") {
       this.canvas.style.cursor = "crosshair";
     } else if (mode === null) {
       this.canvas.style.cursor = "grab";
     } else {
       this.canvas.style.cursor = "crosshair";
     }
+    
+    // Re-render to clear preview line if mode changed
+    this.render();
+  }
+  
+  setPolygonSelectMode(callback = null) {
+    // Set polygon selection mode
+    this.setDrawingMode("polygon-select");
+    this.onPolygonSelect = callback;
+    this.polygonSelectPoints = [];
+    console.log("Polygon select mode activated");
   }
 
   renderPoint(x, y, style = {}) {

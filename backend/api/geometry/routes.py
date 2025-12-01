@@ -20,10 +20,22 @@ def add_point(session_id: int):
         geometry_service = get_geometry_service()
         result = geometry_service.add_point(session_id, x, y, attributes)
         
+        # result is now a Site object
+        from backend.domain.vectors import Site
+        if isinstance(result, Site):
+            site = result
+        else:
+            # Backward compatibility: result is dict, load as Site
+            site = geometry_service.load_current_geometry(session_id, as_site=True)
+        
+        # Get the last added point
+        points = site.points
+        last_point = points[-1].to_frontend_json() if points else None
+        
         return jsonify({
             "success": True,
-            "version": result["version"],
-            "point": result["points"][-1] if result.get("points") else None
+            "version": site.version,
+            "point": last_point
         }), 200
     except (ValueError, TypeError) as e:
         return jsonify({"success": False, "message": f"Invalid coordinates: {e}"}), 400
@@ -33,7 +45,9 @@ def add_point(session_id: int):
         return jsonify({"success": False, "message": str(e)}), 400
     except Exception as e:
         current_app.logger.error(f"Error adding point: {e}", exc_info=True)
-        return jsonify({"success": False, "message": "Internal server error"}), 500
+        import traceback
+        current_app.logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({"success": False, "message": f"Internal server error: {str(e)}"}), 500
 
 
 @geometry_bp.get("/api/geometry/<int:session_id>")
@@ -41,16 +55,31 @@ def get_geometry(session_id: int):
     """Get current geometry state for a session."""
     try:
         geometry_service = get_geometry_service()
-        geometry = geometry_service.load_current_geometry(session_id)
+        site = geometry_service.load_current_geometry(session_id, as_site=True)
         
-        return jsonify(geometry), 200
+        # Ensure session_id is set for proper frontend JSON conversion
+        if site.session_id is None:
+            site.session_id = session_id
+        
+        # Convert to frontend JSON format
+        frontend_json = site.to_frontend_json()
+        
+        # Ensure we have points and segments arrays even if empty
+        if 'points' not in frontend_json:
+            frontend_json['points'] = []
+        if 'segments' not in frontend_json:
+            frontend_json['segments'] = []
+        
+        return jsonify(frontend_json), 200
     except SessionNotFoundError as e:
         return jsonify({"message": str(e)}), 404
     except GeometryError as e:
         return jsonify({"message": str(e)}), 400
     except Exception as e:
         current_app.logger.error(f"Error loading geometry: {e}", exc_info=True)
-        return jsonify({"message": "Internal server error"}), 500
+        import traceback
+        current_app.logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({"message": f"Internal server error: {str(e)}"}), 500
 
 
 @geometry_bp.post("/api/geometry/<int:session_id>/save")
@@ -61,11 +90,28 @@ def save_geometry(session_id: int):
         
         geometry_service = get_geometry_service()
         action = data.get("action", "modify")
-        result = geometry_service.save_geometry(session_id, data, action)
+        
+        # Convert frontend JSON to Site object if needed
+        from backend.domain.vectors import Site
+        if isinstance(data, dict) and ('collections' in data or 'points' in data or 'segments' in data):
+            # Frontend format - convert to Site
+            data['sessionId'] = session_id
+            site = Site.from_frontend_json(data)
+            result = geometry_service.save_geometry(session_id, site, action)
+        else:
+            # Storage format or backward compatibility
+            result = geometry_service.save_geometry(session_id, data, action)
+        
+        # Get version from result
+        from backend.domain.vectors import Site
+        if isinstance(result, Site):
+            site = result
+        else:
+            site = geometry_service.load_current_geometry(session_id, as_site=True)
         
         return jsonify({
             "success": True,
-            "version": result["version"]
+            "version": site.version
         }), 200
     except SessionNotFoundError as e:
         return jsonify({"success": False, "message": str(e)}), 404
@@ -118,11 +164,18 @@ def update_point(session_id: int, point_id: str):
             attributes=attributes
         )
         
-        current_app.logger.info(f"Point {point_id} updated successfully, new version: {result['version']}")
+        # result is now a Site object
+        from backend.domain.vectors import Site
+        if isinstance(result, Site):
+            site = result
+        else:
+            site = geometry_service.load_current_geometry(session_id, as_site=True)
+        
+        current_app.logger.info(f"Point {point_id} updated successfully, new version: {site.version}")
         
         return jsonify({
             "success": True,
-            "version": result["version"]
+            "version": site.version
         }), 200
     except (ValueError, TypeError) as e:
         return jsonify({"success": False, "message": f"Invalid data: {e}"}), 400
@@ -149,14 +202,26 @@ def add_segment(session_id: int):
         attributes = data.get("attributes")
         
         geometry_service = get_geometry_service()
+        segment_type = data.get("segmentType", "line")
         result = geometry_service.add_segment(
-            session_id, start_x, start_y, end_x, end_y, attributes
+            session_id, start_x, start_y, end_x, end_y, attributes, segment_type=segment_type
         )
+        
+        # result is now a Site object
+        from backend.domain.vectors import Site
+        if isinstance(result, Site):
+            site = result
+        else:
+            site = geometry_service.load_current_geometry(session_id, as_site=True)
+        
+        # Get the last added segment
+        segments = site.get_all_segments()
+        last_segment = segments[-1].to_frontend_json() if segments else None
         
         return jsonify({
             "success": True,
-            "version": result["version"],
-            "segment": result["segments"][-1] if result.get("segments") else None
+            "version": site.version,
+            "segment": last_segment
         }), 200
     except (ValueError, TypeError) as e:
         return jsonify({"success": False, "message": f"Invalid coordinates: {e}"}), 400
@@ -166,7 +231,9 @@ def add_segment(session_id: int):
         return jsonify({"success": False, "message": str(e)}), 400
     except Exception as e:
         current_app.logger.error(f"Error adding segment: {e}", exc_info=True)
-        return jsonify({"success": False, "message": "Internal server error"}), 500
+        import traceback
+        current_app.logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({"success": False, "message": f"Internal server error: {str(e)}"}), 500
 
 
 @geometry_bp.put("/api/geometry/<int:session_id>/segment/<segment_id>")
@@ -209,11 +276,18 @@ def update_segment(session_id: int, segment_id: str):
             attributes=attributes
         )
         
-        current_app.logger.info(f"Segment {segment_id} updated successfully, new version: {result['version']}")
+        # result is now a Site object
+        from backend.domain.vectors import Site
+        if isinstance(result, Site):
+            site = result
+        else:
+            site = geometry_service.load_current_geometry(session_id, as_site=True)
+        
+        current_app.logger.info(f"Segment {segment_id} updated successfully, new version: {site.version}")
         
         return jsonify({
             "success": True,
-            "version": result["version"]
+            "version": site.version
         }), 200
     except (ValueError, TypeError) as e:
         return jsonify({"success": False, "message": f"Invalid data: {e}"}), 400
@@ -233,11 +307,14 @@ def undo_action(session_id: int):
     """Undo last action."""
     try:
         geometry_service = get_geometry_service()
-        result = geometry_service.undo(session_id)
+        result = geometry_service.undo(session_id, as_site=False)
+        
+        # result is JSON dict
+        version = result.get("version", 0) if isinstance(result, dict) else result.version
         
         return jsonify({
             "success": True,
-            "version": result["version"]
+            "version": version
         }), 200
     except GeometryError as e:
         return jsonify({"success": False, "message": str(e)}), 400
@@ -247,3 +324,35 @@ def undo_action(session_id: int):
         current_app.logger.error(f"Error undoing action: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Internal server error"}), 500
 
+
+@geometry_bp.delete("/api/geometry/<int:session_id>/<object_type>/<object_id>")
+def delete_object(session_id: int, object_type: str, object_id: str):
+    """Delete an object (point, segment, parcel, layer) from the geometry."""
+    try:
+        geometry_service = get_geometry_service()
+        result = geometry_service.delete_object(session_id, object_type, object_id)
+        
+        # result is a Site object
+        from backend.domain.vectors import Site
+        if isinstance(result, Site):
+            site = result
+        else:
+            site = geometry_service.load_current_geometry(session_id, as_site=True)
+        
+        current_app.logger.info(f"Object {object_type}/{object_id} deleted successfully, new version: {site.version}")
+        
+        return jsonify({
+            "success": True,
+            "version": site.version
+        }), 200
+    except (ValueError, TypeError) as e:
+        return jsonify({"success": False, "message": f"Invalid data: {e}"}), 400
+    except SessionNotFoundError as e:
+        return jsonify({"success": False, "message": str(e)}), 404
+    except GeometryNotFoundError as e:
+        return jsonify({"success": False, "message": str(e)}), 404
+    except GeometryError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error deleting object: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Internal server error"}), 500
