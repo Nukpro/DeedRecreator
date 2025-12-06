@@ -294,7 +294,8 @@ function initializeGeometryViewer() {
     width: rect.width || 800,
     height: rect.height || 600,
     backgroundColor: "#ffffff",
-    padding: 20
+    padding: 20,
+    snapEnabled: snapEnabled // Task 5.2.1.1: Pass snapEnabled in options
   });
 
   // Initialize property editor
@@ -1802,6 +1803,10 @@ function setupDrawingControls() {
         button.classList.toggle("active", snapEnabled);
         console.log(`Snap ${snapEnabled ? "enabled" : "disabled"}`);
         recordAction(`Snap ${snapEnabled ? "enabled" : "disabled"}.`);
+        // Task 5.2.2.1.1: Call geometryViewer.setSnapEnabled() to update GeometryViewer state
+        if (geometryViewer) {
+          geometryViewer.setSnapEnabled(snapEnabled);
+        }
         return;
       }
       

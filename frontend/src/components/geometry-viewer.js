@@ -19,6 +19,8 @@ export default class GeometryViewer {
       maxScale: typeof options.maxScale === "number" ? options.maxScale : 20,
       zoomIntensity:
         typeof options.zoomIntensity === "number" ? options.zoomIntensity : 0.0015,
+      snapEnabled: options.snapEnabled !== undefined ? options.snapEnabled : false,
+      snapTolerance: typeof options.snapTolerance === "number" ? options.snapTolerance : 10,
       ...options
     };
 
@@ -61,6 +63,9 @@ export default class GeometryViewer {
     this.onPointUpdate = null; // Callback when point is updated
     this.onPointEditStart = null; // Callback when starting to edit a point (Task 4.1: close property window)
     this._pointEditCancelHandler = null; // ESC key handler for canceling point editing
+    
+    // Snap (magnet) state (Task 5)
+    this.snappedTarget = null; // Current snapped target for visual feedback
 
     this.init();
   }
@@ -534,6 +539,31 @@ export default class GeometryViewer {
         this.ctx.stroke();
       });
     }
+    
+    // Task 5.1.7: Render snapped point indicator when snap target is active (render last to be on top)
+    if (this.snappedTarget) {
+      const snapIndicatorStyle = {
+        size: 8,
+        color: "#00ff00", // Green color to indicate snap is active
+        stroke: "#ffffff",
+        strokeWidth: 2
+      };
+      this.renderPoint(this.snappedTarget.x, this.snappedTarget.y, snapIndicatorStyle);
+      
+      // Also draw a crosshair at snapped position for better visibility
+      const snapCanvas = this.worldToCanvas(this.snappedTarget.x, this.snappedTarget.y);
+      const crosshairSize = 12;
+      this.ctx.strokeStyle = "#00ff00";
+      this.ctx.lineWidth = 1.5;
+      this.ctx.beginPath();
+      // Horizontal line
+      this.ctx.moveTo(snapCanvas.x - crosshairSize, snapCanvas.y);
+      this.ctx.lineTo(snapCanvas.x + crosshairSize, snapCanvas.y);
+      // Vertical line
+      this.ctx.moveTo(snapCanvas.x, snapCanvas.y - crosshairSize);
+      this.ctx.lineTo(snapCanvas.x, snapCanvas.y + crosshairSize);
+      this.ctx.stroke();
+    }
   }
 
   renderFeature(feature) {
@@ -666,7 +696,20 @@ export default class GeometryViewer {
     const rect = this.canvas.getBoundingClientRect();
     const canvasX = event.clientX - rect.left;
     const canvasY = event.clientY - rect.top;
-    const worldPoint = this.canvasToWorld(canvasX, canvasY);
+    let worldPoint = this.canvasToWorld(canvasX, canvasY);
+    
+    // Task 5.1.6: Apply snapping before processing click
+    if (this.options.snapEnabled && 
+        (this.drawingMode === "points" || 
+         this.drawingMode === "segments" || 
+         this.editingLinePoint || 
+         this.editingPoint)) {
+      const snapTarget = this.findNearestSnapTarget(worldPoint.x, worldPoint.y, canvasX, canvasY);
+      if (snapTarget) {
+        // Use snapped coordinates for point placement and segment creation
+        worldPoint = { x: snapTarget.x, y: snapTarget.y };
+      }
+    }
     
     // Task 2.2.2: Process of drawing the line should start/end with left mouse button only
     // event.button: 0 = left, 1 = middle, 2 = right
@@ -1034,11 +1077,154 @@ export default class GeometryViewer {
     return null;
   }
 
+  // Task 5.1.3: Collect all available snap targets
+  getAllSnapTargets() {
+    const targets = [];
+    
+    // 5.1.3.1: Collect all points from this.data.points array (if exists)
+    if (this.data && this.data.points && Array.isArray(this.data.points)) {
+      for (const point of this.data.points) {
+        if (point.x !== undefined && point.y !== undefined) {
+          targets.push({
+            x: point.x,
+            y: point.y,
+            type: "point",
+            sourceId: point.id
+          });
+        }
+      }
+    }
+    
+    // 5.1.3.2-3: Collect start_pt and end_pt from all LineSegments in this.data.segments array (if exists)
+    if (this.data && this.data.segments && Array.isArray(this.data.segments)) {
+      for (const segment of this.data.segments) {
+        if (segment.segmentType === "line" && segment.start && segment.end) {
+          // 5.1.3.2: Collect start_pt
+          if (segment.start.x !== undefined && segment.start.y !== undefined) {
+            targets.push({
+              x: segment.start.x,
+              y: segment.start.y,
+              type: "start_pt",
+              sourceId: segment.id
+            });
+          }
+          // 5.1.3.3: Collect end_pt
+          if (segment.end.x !== undefined && segment.end.y !== undefined) {
+            targets.push({
+              x: segment.end.x,
+              y: segment.end.y,
+              type: "end_pt",
+              sourceId: segment.id
+            });
+          }
+        }
+      }
+    }
+    
+    // 5.1.3.4: Collect start_pt and end_pt from all LineSegments in this.data.collections[].features[].geometry.segments (if exists)
+    if (this.data && this.data.collections && Array.isArray(this.data.collections)) {
+      for (const collection of this.data.collections) {
+        if (collection.features && Array.isArray(collection.features)) {
+          for (const feature of collection.features) {
+            if (feature.geometry && feature.geometry.segments && Array.isArray(feature.geometry.segments)) {
+              for (const segment of feature.geometry.segments) {
+                if (segment.segmentType === "line" && segment.start && segment.end) {
+                  // Collect start_pt
+                  if (segment.start.x !== undefined && segment.start.y !== undefined) {
+                    targets.push({
+                      x: segment.start.x,
+                      y: segment.start.y,
+                      type: "start_pt",
+                      sourceId: segment.id
+                    });
+                  }
+                  // Collect end_pt
+                  if (segment.end.x !== undefined && segment.end.y !== undefined) {
+                    targets.push({
+                      x: segment.end.x,
+                      y: segment.end.y,
+                      type: "end_pt",
+                      sourceId: segment.id
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    return targets;
+  }
+
+  // Task 5.1.4: Find nearest snap target within tolerance
+  findNearestSnapTarget(worldX, worldY, canvasX, canvasY) {
+    // 5.1.4.1: If snapEnabled is false, return null
+    if (!this.options.snapEnabled) {
+      return null;
+    }
+    
+    // 5.1.4.2: Get all snap targets using getAllSnapTargets()
+    const targets = this.getAllSnapTargets();
+    if (targets.length === 0) {
+      return null;
+    }
+    
+    // 5.1.4.3-5: Find nearest target within tolerance
+    let nearestTarget = null;
+    let minDistance = this.options.snapTolerance;
+    
+    for (const target of targets) {
+      // 5.1.4.3: Convert each snap target to canvas coordinates using worldToCanvas()
+      const targetCanvas = this.worldToCanvas(target.x, target.y);
+      
+      // 5.1.4.4: Calculate distance from cursor (canvasX, canvasY) to each snap target in canvas coordinates
+      const dx = canvasX - targetCanvas.x;
+      const dy = canvasY - targetCanvas.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      // 5.1.4.5: Find the nearest snap target within snapTolerance (pixels)
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearestTarget = {
+          x: target.x, // world coordinates
+          y: target.y, // world coordinates
+          type: target.type,
+          sourceId: target.sourceId,
+          distance: distance
+        };
+      }
+    }
+    
+    // 5.1.4.6-7: Return result or null
+    return nearestTarget;
+  }
+
   onMouseMove(event) {
     const rect = this.canvas.getBoundingClientRect();
     const currentX = event.clientX - rect.left;
     const currentY = event.clientY - rect.top;
-    const worldPoint = this.canvasToWorld(currentX, currentY);
+    let worldPoint = this.canvasToWorld(currentX, currentY);
+
+    // Task 5.1.5: Apply snapping when snapEnabled is true
+    if (this.options.snapEnabled && 
+        (this.drawingMode === "points" || 
+         this.drawingMode === "segments" || 
+         this.editingLinePoint || 
+         this.editingPoint)) {
+      const snapTarget = this.findNearestSnapTarget(worldPoint.x, worldPoint.y, currentX, currentY);
+      if (snapTarget) {
+        // 5.1.5.2.2: Replace worldPoint coordinates with snap target coordinates
+        worldPoint = { x: snapTarget.x, y: snapTarget.y };
+        // 5.1.5.2.3: Store snapped target info for visual feedback
+        this.snappedTarget = snapTarget;
+      } else {
+        this.snappedTarget = null;
+      }
+    } else {
+      this.snappedTarget = null;
+    }
 
     this.updateCoordDisplay(currentX, currentY);
 
@@ -1373,6 +1559,17 @@ export default class GeometryViewer {
     this.fitToView();
     this.render();
     this.resetCoordDisplay();
+  }
+
+  // Task 5.2.1.2: Add method setSnapEnabled(enabled) to update snap state dynamically
+  setSnapEnabled(enabled) {
+    this.options.snapEnabled = enabled !== undefined ? enabled : false;
+    // Clear snapped target when disabling snap
+    if (!this.options.snapEnabled) {
+      this.snappedTarget = null;
+    }
+    // Re-render to update visual state
+    this.render();
   }
 
   setDrawingMode(mode, callback = null) {
