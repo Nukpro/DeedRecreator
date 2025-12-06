@@ -315,10 +315,13 @@ class GeometryService:
             dy = end_y - start_y
             length = (dx ** 2 + dy ** 2) ** 0.5
             
-            # Calculate bearing for line segments
-            bearing = math.degrees(math.atan2(dy, dx))
-            if bearing < 0:
-                bearing += 360
+            # Calculate azimuth for line segments
+            # atan2 gives angle from East (0°=East, 90°=North, 180°=West, 270°=South)
+            # Convert to azimuth (0°=North, 90°=East, 180°=South, 270°=West, clockwise)
+            angle_rad = math.atan2(dy, dx)
+            angle_deg = math.degrees(angle_rad)
+            # Formula: azimuth = (90 - angle_deg) % 360
+            azimuth = (90 - angle_deg) % 360
             
             # Get or create default layer and parcel
             default_layer = self._get_or_create_default_layer(site)
@@ -334,7 +337,7 @@ class GeometryService:
                 new_segment = LineSegment(
                     start=start,
                     end=end,
-                    bearing=bearing,
+                    bearing=azimuth,  # Will be stored as azimuth internally
                     length=float(length),
                     layer=segment_attributes.get("layer", ""),
                     attributes=segment_attributes
@@ -397,13 +400,16 @@ class GeometryService:
         dy = end_y - start_y
         segment.length = float((dx ** 2 + dy ** 2) ** 0.5)
         
-        # Update bearing for line segments
+        # Update azimuth for line segments
         if isinstance(segment, LineSegment):
             import math
-            bearing = math.degrees(math.atan2(dy, dx))
-            if bearing < 0:
-                bearing += 360
-            segment.bearing = bearing
+            # atan2 gives angle from East (0°=East, 90°=North, 180°=West, 270°=South)
+            # Convert to azimuth (0°=North, 90°=East, 180°=South, 270°=West, clockwise)
+            angle_rad = math.atan2(dy, dx)
+            angle_deg = math.degrees(angle_rad)
+            # Formula: azimuth = (90 - angle_deg) % 360
+            azimuth = (90 - angle_deg) % 360
+            segment.azimuth = azimuth
         
         # Update layer if provided
         if layer is not None:

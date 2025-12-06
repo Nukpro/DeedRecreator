@@ -9,9 +9,102 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
 from datetime import datetime
 import uuid
+import math
 
 if TYPE_CHECKING:
     from backend.services.geometry_service import GeometryService
+
+
+# ============================================================================
+# Utility functions for azimuth and bearing conversion
+# ============================================================================
+
+def azimuth_to_bearing(azimuth: float) -> Dict[str, Any]:
+    """
+    Convert azimuth (decimal degrees, 0-360, North=0°, clockwise) to bearing.
+    
+    Args:
+        azimuth: Azimuth in decimal degrees (0-360), where 0° is North, clockwise
+        
+    Returns:
+        Dictionary with 'quadrant' (str) and 'bearing' (float, 0-90)
+        
+    Examples:
+        - azimuth 0° (North) → {"quadrant": "NE", "bearing": 0.0}
+        - azimuth 45° (NE) → {"quadrant": "NE", "bearing": 45.0}
+        - azimuth 90° (East) → {"quadrant": "NE", "bearing": 90.0}
+        - azimuth 135° (SE) → {"quadrant": "SE", "bearing": 45.0}
+        - azimuth 180° (South) → {"quadrant": "SE", "bearing": 0.0}
+        - azimuth 225° (SW) → {"quadrant": "SW", "bearing": 45.0}
+        - azimuth 270° (West) → {"quadrant": "SW", "bearing": 0.0}
+        - azimuth 315° (NW) → {"quadrant": "NW", "bearing": 45.0}
+    """
+    # Normalize azimuth to 0-360 range
+    azimuth = azimuth % 360
+    
+    # Determine quadrant and calculate bearing
+    if 0 <= azimuth < 90:
+        # NE quadrant: Axis N is 0°, axis E is 90°
+        quadrant = "NE"
+        bearing = azimuth
+    elif 90 <= azimuth < 180:
+        # SE quadrant: Axis S is 0°, axis E is 90°
+        quadrant = "SE"
+        bearing = 180 - azimuth
+    elif 180 <= azimuth < 270:
+        # SW quadrant: Axis S is 0°, axis W is 90°
+        quadrant = "SW"
+        bearing = azimuth - 180
+    elif 270 <= azimuth < 360:
+        # NW quadrant: Axis N is 0°, axis W is 90°
+        quadrant = "NW"
+        bearing = 360 - azimuth
+    else:
+        # Should not happen due to modulo, but handle edge case
+        quadrant = "NE"
+        bearing = 0.0
+    
+    return {"quadrant": quadrant, "bearing": bearing}
+
+
+def bearing_to_azimuth(quadrant: str, bearing: float) -> float:
+    """
+    Convert bearing (quadrant + angle) to azimuth (decimal degrees).
+    
+    Args:
+        quadrant: Quadrant string ("NE", "NW", "SW", or "SE")
+        bearing: Bearing angle in decimal degrees (0-90)
+        
+    Returns:
+        Azimuth in decimal degrees (0-360), where 0° is North, clockwise
+        
+    Raises:
+        ValueError: If quadrant is invalid or bearing is out of range (0-90)
+    """
+    if bearing < 0 or bearing > 90:
+        raise ValueError(f"Bearing must be in range 0-90 degrees, got {bearing}")
+    
+    quadrant = quadrant.upper()
+    
+    if quadrant == "NE":
+        # Axis N is 0°, axis E is 90°
+        azimuth = bearing
+    elif quadrant == "SE":
+        # Axis S is 0°, axis E is 90°
+        azimuth = 180 - bearing
+    elif quadrant == "SW":
+        # Axis S is 0°, axis W is 90°
+        azimuth = 180 + bearing
+    elif quadrant == "NW":
+        # Axis N is 0°, axis W is 90°
+        azimuth = 360 - bearing
+    else:
+        raise ValueError(f"Invalid quadrant: {quadrant}. Must be NE, NW, SW, or SE")
+    
+    # Normalize to 0-360 range
+    azimuth = azimuth % 360
+    
+    return azimuth
 
 
 class GeometryObject(ABC):
@@ -336,22 +429,118 @@ class LineSegment(Segment):
     def __init__(self, start: Dict[str, float], end: Dict[str, float], 
                  bearing: float = 0.0, **kwargs):
         super().__init__('line', start, end, **kwargs)
-        self.__bearing = float(bearing)
+        # Store as azimuth (direction to North 0°, clockwise up to 360°)
+        # Keep 'bearing' parameter name for backward compatibility
+        self.__azimuth = float(bearing) % 360
+    
+    @property
+    def azimuth(self) -> float:
+        """Get azimuth in degrees (direction to North 0°, clockwise up to 360°)."""
+        return self.__azimuth
+    
+    @azimuth.setter
+    def azimuth(self, value: float) -> None:
+        """Set azimuth in degrees (direction to North 0°, clockwise up to 360°)."""
+        self.__azimuth = float(value) % 360
     
     @property
     def bearing(self) -> float:
-        """Get bearing (azimuth) in degrees."""
-        return self.__bearing
+        """Get bearing (azimuth) in degrees. Kept for backward compatibility."""
+        return self.__azimuth
     
     @bearing.setter
     def bearing(self, value: float) -> None:
-        """Set bearing (azimuth) in degrees."""
-        self.__bearing = float(value)
+        """Set bearing (azimuth) in degrees. Kept for backward compatibility."""
+        self.__azimuth = float(value) % 360
+    
+    def recalculate_by_bearing_and_distance(
+        self,
+        quadrant: str,
+        bearing: float,
+        distance: float,
+        blocked_point: str = "start_pt"
+    ) -> None:
+        """
+        Recalculate line segment position using bearing and distance.
+        
+        Args:
+            quadrant: Quadrant string ("NE", "NW", "SW", or "SE")
+            bearing: Bearing angle in decimal degrees (0-90)
+            distance: Distance in coordinate units (must be > 0)
+            blocked_point: Which point to keep fixed ("start_pt" or "end_pt"), default "start_pt"
+            
+        Raises:
+            ValueError: If bearing is out of range (0-90), distance <= 0, or quadrant is invalid
+        """
+        # Validate bearing range
+        if bearing < 0 or bearing > 90:
+            raise ValueError(f"Bearing must be in range 0-90 degrees, got {bearing}")
+        
+        # Validate distance
+        if distance <= 0:
+            raise ValueError(f"Distance must be greater than 0, got {distance}")
+        
+        # Validate blocked_point
+        if blocked_point not in ["start_pt", "end_pt"]:
+            raise ValueError(f"blocked_point must be 'start_pt' or 'end_pt', got {blocked_point}")
+        
+        # Convert bearing to azimuth using utility function
+        azimuth = bearing_to_azimuth(quadrant, bearing)
+        
+        # Convert azimuth to radians for calculation
+        azimuth_rad = math.radians(azimuth)
+        
+        # Calculate the new point position
+        # Azimuth: 0° = North (positive Y), 90° = East (positive X), clockwise
+        dx = distance * math.sin(azimuth_rad)  # East component
+        dy = distance * math.cos(azimuth_rad)  # North component
+        
+        # Determine which point is blocked and calculate the other
+        # Use properties to access coordinates (avoids name mangling issues)
+        current_start = self.start
+        current_end = self.end
+        
+        if blocked_point == "start_pt":
+            # Keep start point, calculate new end point
+            new_end_x = current_start['x'] + dx
+            new_end_y = current_start['y'] + dy
+            # Validate calculated coordinates are finite
+            if not (math.isfinite(new_end_x) and math.isfinite(new_end_y)):
+                raise ValueError(f"Calculated end point coordinates are not finite: ({new_end_x}, {new_end_y})")
+            self.end = {'x': new_end_x, 'y': new_end_y}
+        else:
+            # Keep end point, calculate new start point
+            new_start_x = current_end['x'] - dx
+            new_start_y = current_end['y'] - dy
+            # Validate calculated coordinates are finite
+            if not (math.isfinite(new_start_x) and math.isfinite(new_start_y)):
+                raise ValueError(f"Calculated start point coordinates are not finite: ({new_start_x}, {new_start_y})")
+            self.start = {'x': new_start_x, 'y': new_start_y}
+        
+        # Recalculate length and azimuth using updated coordinates
+        updated_start = self.start
+        updated_end = self.end
+        dx_new = updated_end['x'] - updated_start['x']
+        dy_new = updated_end['y'] - updated_start['y']
+        self.length = float((dx_new ** 2 + dy_new ** 2) ** 0.5)
+        
+        # Recalculate azimuth from new coordinates
+        # atan2 gives angle from East, convert to azimuth (from North, clockwise)
+        angle_rad = math.atan2(dy_new, dx_new)
+        angle_deg = math.degrees(angle_rad)
+        # Convert from mathematical angle (0°=East) to azimuth (0°=North, clockwise)
+        # Mathematical: 0°=East, 90°=North, 180°=West, 270°=South
+        # Azimuth: 0°=North, 90°=East, 180°=South, 270°=West
+        # Formula: azimuth = (90 - angle_deg) % 360
+        # Python's % operator always returns a value in [0, 360) for positive modulus
+        azimuth = (90 - angle_deg) % 360
+        self.__azimuth = azimuth
     
     def to_storage_json(self) -> Dict[str, Any]:
         """Convert to storage JSON format."""
         result = super().to_storage_json()
-        result['bearing'] = self.__bearing
+        # Store as 'bearing' for backward compatibility with existing data
+        result['bearing'] = self.__azimuth
         return result
     
     def to_frontend_json(self) -> Dict[str, Any]:
@@ -365,7 +554,7 @@ class LineSegment(Segment):
             id=data.get('id', str(uuid.uuid4())),
             start=data.get('start', {'x': 0.0, 'y': 0.0}),
             end=data.get('end', {'x': 0.0, 'y': 0.0}),
-            bearing=data.get('bearing', 0.0),
+            bearing=data.get('bearing', 0.0),  # Will be stored as azimuth internally
             length=data.get('length', 0.0),
             layer=data.get('layer', ''),
             attributes=data.get('attributes', {})

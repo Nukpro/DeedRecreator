@@ -81,3 +81,6 @@ instance/sessions.json
 
 # Test files (optional - uncomment if you want to exclude test files)
 # test/
+TODO.txt
+-add/
+

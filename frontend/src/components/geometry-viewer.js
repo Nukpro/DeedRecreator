@@ -48,6 +48,19 @@ export default class GeometryViewer {
     this.hoveredObject = null; // Currently hovered object (point, segment, etc.)
     this.polygonSelectPoints = []; // Points for polygon selection
     this.selectedObjects = null; // Array of selected objects (from SelectionSet)
+    this._segmentCancelHandler = null; // ESC key handler for canceling segment drawing
+    
+    // Line point editing state (Task 3)
+    this.editingLinePoint = null; // { segmentId, pointType: "start" | "end", originalSegment }
+    this.onLinePointUpdate = null; // Callback when line point is updated
+    this.onLinePointEditStart = null; // Callback when starting to edit a line point (Task 3.2.1: close property window)
+    this._linePointEditCancelHandler = null; // ESC key handler for canceling line point editing
+    
+    // Point editing state (Task 4)
+    this.editingPoint = null; // { pointId, originalPoint: {x, y, layer, ...} }
+    this.onPointUpdate = null; // Callback when point is updated
+    this.onPointEditStart = null; // Callback when starting to edit a point (Task 4.1: close property window)
+    this._pointEditCancelHandler = null; // ESC key handler for canceling point editing
 
     this.init();
   }
@@ -84,6 +97,44 @@ export default class GeometryViewer {
 
   loadData(jsonData, preserveView = false) {
     this.data = jsonData;
+    
+    // Convert azimuth to bearing for all segments (backend sends bearing field which is actually azimuth)
+    if (this.data && this.data.segments && Array.isArray(this.data.segments)) {
+      this.data.segments.forEach((segment) => {
+        if (segment.segmentType === "line" && segment.bearing !== undefined && typeof segment.bearing === 'number') {
+          // Backend sends bearing field which is actually azimuth (0-360°)
+          // Convert to bearing format (quadrant + 0-90°)
+          if (typeof window.azimuthToBearing === 'function' && segment.bearing > 90) {
+            const bearingData = window.azimuthToBearing(segment.bearing);
+            segment.quadrant = bearingData.quadrant;
+            segment.bearing = bearingData.bearing; // Now it's 0-90° bearing
+          }
+        }
+      });
+    }
+    
+    // Also process segments in collections
+    if (this.data && this.data.collections && Array.isArray(this.data.collections)) {
+      this.data.collections.forEach((collection) => {
+        if (collection.features && Array.isArray(collection.features)) {
+          collection.features.forEach((feature) => {
+            if (feature.geometry && feature.geometry.segments && Array.isArray(feature.geometry.segments)) {
+              feature.geometry.segments.forEach((segment) => {
+                if (segment.segmentType === "line" && segment.bearing !== undefined && typeof segment.bearing === 'number') {
+                  // Convert azimuth to bearing
+                  if (typeof window.azimuthToBearing === 'function' && segment.bearing > 90) {
+                    const bearingData = window.azimuthToBearing(segment.bearing);
+                    segment.quadrant = bearingData.quadrant;
+                    segment.bearing = bearingData.bearing; // Now it's 0-90° bearing
+                  }
+                }
+              });
+            }
+          });
+        }
+      });
+    }
+    
     // Clear selection and hover when loading new data
     this.selectedObject = null;
     this.hoveredObject = null;
@@ -294,6 +345,25 @@ export default class GeometryViewer {
             this.ctx.strokeStyle = "#ffff00"; // Yellow outline
             this.ctx.lineWidth = style.lineWidth + 4; // Thicker outline for visibility
             this.ctx.stroke();
+            
+            // Task 3.1: Display start and end points when line is selected
+            // Draw start point
+            this.ctx.fillStyle = "#0066ff"; // Blue color for line endpoints
+            this.ctx.beginPath();
+            this.ctx.arc(startCanvas.x, startCanvas.y, 6, 0, 2 * Math.PI);
+            this.ctx.fill();
+            this.ctx.strokeStyle = "#ffffff";
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
+            
+            // Draw end point
+            this.ctx.fillStyle = "#0066ff";
+            this.ctx.beginPath();
+            this.ctx.arc(endCanvas.x, endCanvas.y, 6, 0, 2 * Math.PI);
+            this.ctx.fill();
+            this.ctx.strokeStyle = "#ffffff";
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
           }
           
           // Draw main line
@@ -311,17 +381,45 @@ export default class GeometryViewer {
     if (this.data && this.data.points && Array.isArray(this.data.points)) {
       this.data.points.forEach((point) => {
         if (point.x !== undefined && point.y !== undefined) {
-          const pointObject = {
-            type: "point",
-            id: point.id,
-            x: point.x,
-            y: point.y
-          };
-          const state = this.getObjectState(pointObject);
-          const style = this.getPointStyle(state);
-          this.renderPoint(point.x, point.y, style);
+          // Task 4.2: Skip rendering the point being edited (we'll render it separately)
+          if (this.editingPoint && this.editingPoint.pointId === point.id) {
+            // Render original point in its original position
+            const originalPoint = this.editingPoint.originalPoint;
+            if (originalPoint) {
+              const pointObject = {
+                type: "point",
+                id: point.id,
+                x: originalPoint.x,
+                y: originalPoint.y
+              };
+              const state = this.getObjectState(pointObject);
+              const style = this.getPointStyle(state);
+              this.renderPoint(originalPoint.x, originalPoint.y, style);
+            }
+          } else {
+            const pointObject = {
+              type: "point",
+              id: point.id,
+              x: point.x,
+              y: point.y
+            };
+            const state = this.getObjectState(pointObject);
+            const style = this.getPointStyle(state);
+            this.renderPoint(point.x, point.y, style);
+          }
         }
       });
+    }
+    
+    // Task 4.3: Render transparent clone that tracks cursor when editing point
+    if (this.editingPoint && this.currentMousePosition) {
+      const cloneStyle = {
+        size: 7,
+        color: "rgba(255, 51, 0, 0.5)", // More transparent version of selected point color
+        stroke: "rgba(255, 255, 0, 0.5)", // More transparent version of selected point stroke
+        strokeWidth: 2.5
+      };
+      this.renderPoint(this.currentMousePosition.x, this.currentMousePosition.y, cloneStyle);
     }
     
     // Render preview line when drawing segments (from first point to current mouse position)
@@ -337,6 +435,48 @@ export default class GeometryViewer {
       this.ctx.setLineDash([5, 5]); // Dashed line for preview
       this.ctx.stroke();
       this.ctx.setLineDash([]); // Reset line dash
+    }
+    
+    // Task 3.2.2-3.2.3: Render tracking line and original line when editing line point
+    if (this.editingLinePoint && this.currentMousePosition) {
+      const { originalSegment, pointType } = this.editingLinePoint;
+      
+      // Task 3.2.3: Draw original line (keep it visible during editing)
+      if (originalSegment && originalSegment.start && originalSegment.end) {
+        const origStartCanvas = this.worldToCanvas(originalSegment.start.x, originalSegment.start.y);
+        const origEndCanvas = this.worldToCanvas(originalSegment.end.x, originalSegment.end.y);
+        
+        this.ctx.beginPath();
+        this.ctx.moveTo(origStartCanvas.x, origStartCanvas.y);
+        this.ctx.lineTo(origEndCanvas.x, origEndCanvas.y);
+        this.ctx.strokeStyle = "#888888"; // Gray color for original line
+        this.ctx.lineWidth = 2;
+        this.ctx.setLineDash([3, 3]); // Dashed line for original
+        this.ctx.stroke();
+        this.ctx.setLineDash([]); // Reset line dash
+      }
+      
+      // Task 3.2.2: Draw tracking line from opposite point to cursor position
+      let fixedPoint;
+      if (pointType === "start" && originalSegment && originalSegment.end) {
+        fixedPoint = { x: originalSegment.end.x, y: originalSegment.end.y };
+      } else if (pointType === "end" && originalSegment && originalSegment.start) {
+        fixedPoint = { x: originalSegment.start.x, y: originalSegment.start.y };
+      }
+      
+      if (fixedPoint) {
+        const fixedCanvas = this.worldToCanvas(fixedPoint.x, fixedPoint.y);
+        const currentCanvas = this.worldToCanvas(this.currentMousePosition.x, this.currentMousePosition.y);
+        
+        this.ctx.beginPath();
+        this.ctx.moveTo(fixedCanvas.x, fixedCanvas.y);
+        this.ctx.lineTo(currentCanvas.x, currentCanvas.y);
+        this.ctx.strokeStyle = "#0000ff"; // Blue color for tracking line
+        this.ctx.lineWidth = 2;
+        this.ctx.setLineDash([5, 5]); // Dashed line for preview
+        this.ctx.stroke();
+        this.ctx.setLineDash([]); // Reset line dash
+      }
     }
     
     // Render polygon selection preview
@@ -528,6 +668,15 @@ export default class GeometryViewer {
     const canvasY = event.clientY - rect.top;
     const worldPoint = this.canvasToWorld(canvasX, canvasY);
     
+    // Task 2.2.2: Process of drawing the line should start/end with left mouse button only
+    // event.button: 0 = left, 1 = middle, 2 = right
+    if (this.drawingMode === "segments" || this.drawingMode === "points") {
+      if (event.button !== 0) {
+        // Not left mouse button - ignore
+        return;
+      }
+    }
+    
     // If in drawing mode, handle click for drawing
     if (this.drawingMode === "points" && this.onPointClick) {
       event.preventDefault();
@@ -547,6 +696,8 @@ export default class GeometryViewer {
           // First point - store it
           this.segmentStartPoint = { x: worldPoint.x, y: worldPoint.y };
           console.log("Segment start point selected:", this.segmentStartPoint);
+          // Task 2.2.1: Add ESC key handler to cancel drawing after first point
+          this._attachSegmentCancelHandler();
         } else {
           // Second point - create segment
           const endPoint = { x: worldPoint.x, y: worldPoint.y };
@@ -562,6 +713,7 @@ export default class GeometryViewer {
           // Reset for next segment (this clears the preview line)
           this.segmentStartPoint = null;
           this.currentMousePosition = null;
+          this._removeSegmentCancelHandler();
         }
         return;
       } else {
@@ -595,6 +747,141 @@ export default class GeometryViewer {
     
     // If in cursor mode, check for object clicks
     if (this.drawingMode === null && this.onObjectClick) {
+      // Task 4: Check if clicking on a point (if editing point)
+      if (this.editingPoint && event.button === 0) {
+        // Task 4.5: Second left mouse button press - confirm edit
+        event.preventDefault();
+        event.stopPropagation();
+        const { pointId } = this.editingPoint;
+        const newX = worldPoint.x;
+        const newY = worldPoint.y;
+        
+        if (this.onPointUpdate) {
+          this.onPointUpdate(pointId, newX, newY);
+        }
+        
+        // Clear editing state
+        this.editingPoint = null;
+        this.currentMousePosition = null;
+        this._removePointEditCancelHandler();
+        this.render();
+        return;
+      }
+      
+      // Task 3.2: Check if clicking on a line endpoint (if editing line point)
+      if (this.editingLinePoint && event.button === 0) {
+        // Task 3.2.5: Second left mouse button press - confirm edit
+        event.preventDefault();
+        event.stopPropagation();
+        const { segmentId, pointType } = this.editingLinePoint;
+        const newX = worldPoint.x;
+        const newY = worldPoint.y;
+        
+        if (this.onLinePointUpdate) {
+          this.onLinePointUpdate(segmentId, pointType, newX, newY);
+        }
+        
+        // Clear editing state
+        this.editingLinePoint = null;
+        this.currentMousePosition = null;
+        this._removeLinePointEditCancelHandler();
+        this.render();
+        return;
+      }
+      
+      // Task 3.2: Check if clicking on a selected segment's endpoint
+      if (this.selectedObject && this.selectedObject.type === "segment" && event.button === 0) {
+        const clickedEndpoint = this.findLineEndpointAtPoint(this.selectedObject, worldPoint.x, worldPoint.y, canvasX, canvasY);
+        if (clickedEndpoint) {
+          // Task 3.2.1: Close property window if it's open
+          // This will be handled in main.js through a callback
+          event.preventDefault();
+          event.stopPropagation();
+          
+          // Find the original segment data
+          let originalSegment = null;
+          if (this.data && this.data.segments) {
+            originalSegment = this.data.segments.find(s => s.id === this.selectedObject.id);
+          }
+          
+          if (!originalSegment && this.selectedObject.startX !== undefined) {
+            // Fallback: construct from selectedObject
+            originalSegment = {
+              id: this.selectedObject.id,
+              start: { x: this.selectedObject.startX, y: this.selectedObject.startY },
+              end: { x: this.selectedObject.endX, y: this.selectedObject.endY }
+            };
+          }
+          
+          // Task 3.2.1: Close property window if it's open
+          if (this.onLinePointEditStart) {
+            this.onLinePointEditStart();
+          }
+          
+          // Task 3.2.2: Enter editing mode
+          this.editingLinePoint = {
+            segmentId: this.selectedObject.id,
+            pointType: clickedEndpoint, // "start" or "end"
+            originalSegment: originalSegment
+          };
+          
+          // Set current mouse position for tracking line
+          this.currentMousePosition = { x: worldPoint.x, y: worldPoint.y };
+          
+          // Task 3.2.4: Attach ESC handler
+          this._attachLinePointEditCancelHandler();
+          
+          this.render();
+          return;
+        }
+      }
+      
+      // Task 4.1: Check if clicking on a selected point (second click to start editing)
+      if (this.selectedObject && this.selectedObject.type === "point" && event.button === 0) {
+        const clickedObject = this.findObjectAtPoint(worldPoint.x, worldPoint.y, canvasX, canvasY);
+        // Check if the clicked object is the same as the selected point
+        if (clickedObject && clickedObject.type === "point" && clickedObject.id === this.selectedObject.id) {
+          event.preventDefault();
+          event.stopPropagation();
+          
+          // Find the original point data
+          let originalPoint = null;
+          if (this.data && this.data.points) {
+            originalPoint = this.data.points.find(p => p.id === this.selectedObject.id);
+          }
+          
+          if (!originalPoint && this.selectedObject.x !== undefined) {
+            // Fallback: construct from selectedObject
+            originalPoint = {
+              id: this.selectedObject.id,
+              x: this.selectedObject.x,
+              y: this.selectedObject.y,
+              layer: this.selectedObject.layer || ""
+            };
+          }
+          
+          // Task 4.1: Close property window if it's open
+          if (this.onPointEditStart) {
+            this.onPointEditStart();
+          }
+          
+          // Task 4.2-4.3: Enter editing mode - original point stays, clone tracks cursor
+          this.editingPoint = {
+            pointId: this.selectedObject.id,
+            originalPoint: originalPoint
+          };
+          
+          // Set current mouse position for tracking clone
+          this.currentMousePosition = { x: worldPoint.x, y: worldPoint.y };
+          
+          // Task 4.4: Attach ESC handler
+          this._attachPointEditCancelHandler();
+          
+          this.render();
+          return;
+        }
+      }
+      
       const clickedObject = this.findObjectAtPoint(worldPoint.x, worldPoint.y, canvasX, canvasY);
       if (clickedObject) {
         event.preventDefault();
@@ -606,10 +893,12 @@ export default class GeometryViewer {
         this.onObjectClick(clickedObject, { x: event.clientX, y: event.clientY });
         return;
       } else {
-        // Clear selection if clicking on empty space
-        this.selectedObject = null;
-        // Re-render to clear selected state
-        this.render();
+        // Clear selection if clicking on empty space (unless editing line point or point)
+        if (!this.editingLinePoint && !this.editingPoint) {
+          this.selectedObject = null;
+          // Re-render to clear selected state
+          this.render();
+        }
       }
     }
     
@@ -621,6 +910,46 @@ export default class GeometryViewer {
       y: canvasY
     };
     this.updateCoordDisplay(canvasX, canvasY);
+  }
+
+  findLineEndpointAtPoint(segment, worldX, worldY, canvasX, canvasY) {
+    if (!segment || segment.type !== "segment") return null;
+    
+    const clickTolerance = 10; // pixels (slightly larger for easier clicking)
+    
+    // Get segment endpoints
+    let startX, startY, endX, endY;
+    if (segment.startX !== undefined) {
+      startX = segment.startX;
+      startY = segment.startY;
+      endX = segment.endX;
+      endY = segment.endY;
+    } else {
+      return null;
+    }
+    
+    const startCanvas = this.worldToCanvas(startX, startY);
+    const endCanvas = this.worldToCanvas(endX, endY);
+    
+    // Check if click is near start point
+    const distToStart = Math.sqrt(
+      Math.pow(canvasX - startCanvas.x, 2) + 
+      Math.pow(canvasY - startCanvas.y, 2)
+    );
+    if (distToStart <= clickTolerance) {
+      return "start";
+    }
+    
+    // Check if click is near end point
+    const distToEnd = Math.sqrt(
+      Math.pow(canvasX - endCanvas.x, 2) + 
+      Math.pow(canvasY - endCanvas.y, 2)
+    );
+    if (distToEnd <= clickTolerance) {
+      return "end";
+    }
+    
+    return null;
   }
 
   findObjectAtPoint(worldX, worldY, canvasX, canvasY) {
@@ -742,6 +1071,16 @@ export default class GeometryViewer {
         this.currentMousePosition = { x: worldPoint.x, y: worldPoint.y };
         // Re-render to show polygon preview
         this.render();
+      } else if (this.editingLinePoint) {
+        // Task 3.2.2: Update tracking line position during point editing
+        this.currentMousePosition = { x: worldPoint.x, y: worldPoint.y };
+        // Re-render to show tracking line
+        this.render();
+      } else if (this.editingPoint) {
+        // Task 4.3: Update clone position during point editing
+        this.currentMousePosition = { x: worldPoint.x, y: worldPoint.y };
+        // Re-render to show transparent clone
+        this.render();
       } else {
         this.currentMousePosition = null;
       }
@@ -850,8 +1189,10 @@ export default class GeometryViewer {
 
   onMouseLeave() {
     this.isPanning = false;
-    // Clear preview line when mouse leaves canvas
-    this.currentMousePosition = null;
+    // Clear preview line when mouse leaves canvas (but keep it for line point editing or point editing)
+    if (!this.editingLinePoint && !this.editingPoint) {
+      this.currentMousePosition = null;
+    }
     // Clear hover state when mouse leaves canvas
     if (this.hoveredObject) {
       this.hoveredObject = null;
@@ -1037,10 +1378,11 @@ export default class GeometryViewer {
   setDrawingMode(mode, callback = null) {
     // Set drawing mode and callback for clicks
     this.drawingMode = mode;
-    
+
     // Reset segment start point and preview when changing modes
     if (mode !== "segments") {
       this.segmentStartPoint = null;
+      this._removeSegmentCancelHandler();
     }
     if (mode !== "segments" && mode !== "polygon-select") {
       this.currentMousePosition = null;
@@ -1088,6 +1430,92 @@ export default class GeometryViewer {
     this.onPolygonSelect = callback;
     this.polygonSelectPoints = [];
     console.log("Polygon select mode activated");
+  }
+
+  _attachLinePointEditCancelHandler() {
+    if (this._linePointEditCancelHandler) {
+      return; // Handler already attached
+    }
+    
+    this._linePointEditCancelHandler = (event) => {
+      if (event.key === "Escape" && this.editingLinePoint) {
+        event.preventDefault();
+        event.stopPropagation();
+        
+        // Task 3.2.4: Cancel editing without changing
+        this.editingLinePoint = null;
+        this.currentMousePosition = null;
+        this._removeLinePointEditCancelHandler();
+        this.render();
+      }
+    };
+    
+    document.addEventListener("keydown", this._linePointEditCancelHandler);
+  }
+  
+  _removeLinePointEditCancelHandler() {
+    if (this._linePointEditCancelHandler) {
+      document.removeEventListener("keydown", this._linePointEditCancelHandler);
+      this._linePointEditCancelHandler = null;
+    }
+  }
+  
+  _attachPointEditCancelHandler() {
+    if (this._pointEditCancelHandler) {
+      return; // Handler already attached
+    }
+    
+    this._pointEditCancelHandler = (event) => {
+      if (event.key === "Escape" && this.editingPoint) {
+        event.preventDefault();
+        event.stopPropagation();
+        
+        // Task 4.4: Cancel editing without changing
+        this.editingPoint = null;
+        this.currentMousePosition = null;
+        this._removePointEditCancelHandler();
+        this.render();
+      }
+    };
+    
+    document.addEventListener("keydown", this._pointEditCancelHandler);
+  }
+  
+  _removePointEditCancelHandler() {
+    if (this._pointEditCancelHandler) {
+      document.removeEventListener("keydown", this._pointEditCancelHandler);
+      this._pointEditCancelHandler = null;
+    }
+  }
+
+  _attachSegmentCancelHandler() {
+    if (this._segmentCancelHandler) {
+      // Already attached
+      return;
+    }
+    
+    this._segmentCancelHandler = (e) => {
+      if (e.key === "Escape" && this.drawingMode === "segments" && this.segmentStartPoint) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log("ESC pressed - canceling segment drawing");
+        // Cancel segment drawing by resetting the start point
+        this.segmentStartPoint = null;
+        this.currentMousePosition = null;
+        this.render(); // Re-render to remove preview line
+        this._removeSegmentCancelHandler();
+      }
+    };
+    
+    // Attach to document to catch ESC even when canvas doesn't have focus
+    document.addEventListener("keydown", this._segmentCancelHandler, true);
+  }
+
+  _removeSegmentCancelHandler() {
+    if (this._segmentCancelHandler) {
+      document.removeEventListener("keydown", this._segmentCancelHandler, true);
+      this._segmentCancelHandler = null;
+    }
   }
 
   renderPoint(x, y, style = {}) {

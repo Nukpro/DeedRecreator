@@ -49,8 +49,107 @@ function calculateBearing(dx, dy) {
 function calculateDistanceFeet(dx, dy) {
   // Calculate distance in feet (assuming coordinates are already in feet)
   const distance = Math.sqrt(dx * dx + dy * dy);
-  return distance.toFixed(4);
+  return parseFloat(distance.toFixed(4)); // Return as number, not string
 }
+
+// Task 2.3.7: DMS (Degrees Minutes Seconds) conversion functions
+/**
+ * Convert decimal degrees to DMS format (D*MM'SS.SS")
+ * @param {number} decimalDegrees - Angle in decimal degrees (0-90 for bearing)
+ * @returns {string} - Formatted string like "45*30'15.50""
+ */
+function decimalToDMS(decimalDegrees) {
+  const d = Math.floor(decimalDegrees);
+  const minutes = (decimalDegrees - d) * 60;
+  const m = Math.floor(minutes);
+  const seconds = (minutes - m) * 60;
+  const s = seconds.toFixed(2);
+  
+  return `${d}*${String(m).padStart(2, '0')}'${String(s).padStart(5, '0')}"`;
+}
+
+/**
+ * Convert DMS format (D*MM'SS.SS" or D°MM'SS.SS") to decimal degrees
+ * @param {string} dmsString - DMS string like "45*30'15.50"" or "45°30'15.50""
+ * @returns {number} - Decimal degrees (0-90 for bearing)
+ */
+function dmsToDecimal(dmsString) {
+  if (!dmsString || typeof dmsString !== 'string') {
+    throw new Error("Invalid DMS string");
+  }
+  
+  // Remove whitespace
+  dmsString = dmsString.trim();
+  
+  // Support both * and ° as degree separator
+  const normalized = dmsString.replace(/°/g, '*');
+  
+  // Parse pattern: D*MM'SS.SS" or D*MM'SS"
+  const pattern = /^(\d+)[*°](\d{1,2})['′](\d{1,2}(?:\.\d+)?)["″]?$/;
+  const match = normalized.match(pattern);
+  
+  if (!match) {
+    // Try to parse as just a decimal number
+    const decimal = parseFloat(dmsString);
+    if (!isNaN(decimal)) {
+      return decimal;
+    }
+    throw new Error(`Invalid DMS format: ${dmsString}. Expected format: D*MM'SS.SS"`);
+  }
+  
+  const degrees = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const seconds = parseFloat(match[3]);
+  
+  if (minutes >= 60 || seconds >= 60) {
+    throw new Error(`Invalid DMS values: minutes=${minutes}, seconds=${seconds} (must be < 60)`);
+  }
+  
+  const decimal = degrees + (minutes / 60) + (seconds / 3600);
+  return decimal;
+}
+
+/**
+ * Convert azimuth (0-360°, North=0°, clockwise) to bearing (quadrant + 0-90°)
+ * @param {number} azimuth - Azimuth in decimal degrees (0-360)
+ * @returns {Object} - Object with {quadrant: string, bearing: number} where bearing is 0-90
+ */
+function azimuthToBearing(azimuth) {
+  // Normalize azimuth to 0-360 range
+  azimuth = azimuth % 360;
+  if (azimuth < 0) azimuth += 360;
+  
+  let quadrant, bearing;
+  
+  if (0 <= azimuth && azimuth < 90) {
+    // NE quadrant: Axis N is 0°, axis E is 90°
+    quadrant = "NE";
+    bearing = azimuth;
+  } else if (90 <= azimuth && azimuth < 180) {
+    // SE quadrant: Axis S is 0°, axis E is 90°
+    quadrant = "SE";
+    bearing = 180 - azimuth;
+  } else if (180 <= azimuth && azimuth < 270) {
+    // SW quadrant: Axis S is 0°, axis W is 90°
+    quadrant = "SW";
+    bearing = azimuth - 180;
+  } else if (270 <= azimuth && azimuth < 360) {
+    // NW quadrant: Axis N is 0°, axis W is 90°
+    quadrant = "NW";
+    bearing = 360 - azimuth;
+  } else {
+    // Should not happen, but handle edge case
+    quadrant = "NE";
+    bearing = 0.0;
+  }
+  
+  return { quadrant, bearing };
+}
+
+// Make DMS conversion functions globally available for use in property-editor.js
+window.decimalToDMS = decimalToDMS;
+window.dmsToDecimal = dmsToDecimal;
+window.azimuthToBearing = azimuthToBearing;
 
 // SelectionSet class for managing multiple selected objects
 class SelectionSet {
@@ -201,6 +300,232 @@ function initializeGeometryViewer() {
   // Initialize property editor
   propertyEditor = new PropertyEditor(container);
 
+  // Task 3.2.1: Setup callback to close property window when starting to edit line point
+  geometryViewer.onLinePointEditStart = () => {
+    if (propertyEditor) {
+      propertyEditor.hide();
+    }
+  };
+  
+  // Task 4.1: Setup callback to close property window when starting to edit point
+  geometryViewer.onPointEditStart = () => {
+    if (propertyEditor) {
+      propertyEditor.hide();
+    }
+  };
+  
+  // Task 4.5: Setup point update handler
+  geometryViewer.onPointUpdate = async (pointId, newX, newY) => {
+    console.log("Point update:", { pointId, newX, newY });
+    
+    const getSessionId = () => {
+      if (window.sessionData && window.sessionData.id) {
+        return window.sessionData.id;
+      }
+      const urlParams = new URLSearchParams(window.location.search);
+      const sessionId = urlParams.get("session_id");
+      return sessionId ? parseInt(sessionId, 10) : null;
+    };
+    
+    const sessionId = getSessionId();
+    if (!sessionId) {
+      console.error("No session ID available");
+      return;
+    }
+    
+    // Find the point to get current layer and attributes
+    if (!geometryViewer || !geometryViewer.data || !geometryViewer.data.points) {
+      console.error("Cannot find point data");
+      return;
+    }
+    
+    const point = geometryViewer.data.points.find(p => p.id === pointId);
+    if (!point) {
+      console.error("Point not found");
+      return;
+    }
+    
+    // Prepare update data - same API endpoint as property window
+    const updateData = {
+      x: newX,
+      y: newY,
+      layer: point.layer || ""
+    };
+    
+    try {
+      console.log("Sending point update request:", {
+        url: `/api/geometry/${sessionId}/point/${pointId}`,
+        method: "PUT",
+        data: updateData
+      });
+      
+      const response = await fetch(`/api/geometry/${sessionId}/point/${pointId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(updateData)
+      });
+      
+      console.log("Update response status:", response.status, response.statusText);
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Point updated successfully:", result);
+        
+        // Reload geometry to show updated point
+        if (geometryViewer) {
+          try {
+            console.log("Reloading geometry from server...");
+            const reloadResponse = await fetch(`/api/geometry/${sessionId}`);
+            if (reloadResponse.ok) {
+              const data = await reloadResponse.json();
+              geometryViewer.loadData(data, true);
+              geometryViewer.render();
+              
+              // Close property editor if open
+              if (propertyEditor) {
+                propertyEditor.hide();
+              }
+            } else {
+              const errorText = await reloadResponse.text();
+              console.error("Failed to reload geometry:", reloadResponse.status, errorText);
+            }
+          } catch (error) {
+            console.error("Error reloading geometry:", error);
+          }
+        }
+      } else {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { message: errorText || "Unknown error" };
+        }
+        console.error("Failed to update point:", response.status, errorData);
+        alert(`Failed to update point: ${errorData.message || "Unknown error"}`);
+      }
+    } catch (error) {
+      console.error("Error updating point:", error);
+      alert("An error occurred while updating the point: " + error.message);
+    }
+  };
+  
+  // Task 3.2.5: Setup line point update handler
+  geometryViewer.onLinePointUpdate = async (segmentId, pointType, newX, newY) => {
+    console.log("Line point update:", { segmentId, pointType, newX, newY });
+    
+    const getSessionId = () => {
+      if (window.sessionData && window.sessionData.id) {
+        return window.sessionData.id;
+      }
+      const urlParams = new URLSearchParams(window.location.search);
+      const sessionId = urlParams.get("session_id");
+      return sessionId ? parseInt(sessionId, 10) : null;
+    };
+    
+    const sessionId = getSessionId();
+    if (!sessionId) {
+      console.error("No session ID available");
+      return;
+    }
+    
+    // Find the segment to get current coordinates
+    if (!geometryViewer || !geometryViewer.data || !geometryViewer.data.segments) {
+      console.error("Cannot find segment data");
+      return;
+    }
+    
+    const segment = geometryViewer.data.segments.find(s => s.id === segmentId);
+    if (!segment || !segment.start || !segment.end) {
+      console.error("Segment not found or invalid format");
+      return;
+    }
+    
+    // Prepare update data based on which point is being edited
+    let updateData;
+    if (pointType === "start") {
+      updateData = {
+        startX: newX,
+        startY: newY,
+        endX: segment.end.x,
+        endY: segment.end.y,
+        layer: segment.layer || ""
+      };
+    } else if (pointType === "end") {
+      updateData = {
+        startX: segment.start.x,
+        startY: segment.start.y,
+        endX: newX,
+        endY: newY,
+        layer: segment.layer || ""
+      };
+    } else {
+      console.error("Invalid point type:", pointType);
+      return;
+    }
+    
+    try {
+      console.log("Sending line point update request:", {
+        url: `/api/geometry/${sessionId}/segment/${segmentId}`,
+        method: "PUT",
+        data: updateData
+      });
+      
+      const response = await fetch(`/api/geometry/${sessionId}/segment/${segmentId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(updateData)
+      });
+      
+      console.log("Update response status:", response.status, response.statusText);
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Line point updated successfully:", result);
+        
+        // Reload geometry to show updated segment
+        if (geometryViewer) {
+          try {
+            console.log("Reloading geometry from server...");
+            const reloadResponse = await fetch(`/api/geometry/${sessionId}`);
+            if (reloadResponse.ok) {
+              const data = await reloadResponse.json();
+              geometryViewer.loadData(data, true);
+              geometryViewer.render();
+              
+              // Close property editor if open
+              if (propertyEditor) {
+                propertyEditor.hide();
+              }
+            } else {
+              const errorText = await reloadResponse.text();
+              console.error("Failed to reload geometry:", reloadResponse.status, errorText);
+            }
+          } catch (error) {
+            console.error("Error reloading geometry:", error);
+          }
+        }
+      } else {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { message: errorText || "Unknown error" };
+        }
+        console.error("Failed to update line point:", response.status, errorData);
+        alert(`Failed to update line point: ${errorData.message || "Unknown error"}`);
+      }
+    } catch (error) {
+      console.error("Error updating line point:", error);
+      alert("An error occurred while updating the line point: " + error.message);
+    }
+  };
+  
   // Setup object click handler
   geometryViewer.onObjectClick = (object, position) => {
     console.log("Object clicked:", object, position);
@@ -211,12 +536,55 @@ function initializeGeometryViewer() {
     
     // If it's a segment, calculate properties if they're missing
     if (object.type === "segment") {
-      if (!object.quadrant || !object.bearing || !object.distance) {
-        const dx = object.endX - object.startX;
-        const dy = object.endY - object.startY;
+      // Always calculate distance from coordinates (it might be missing)
+      const dx = object.endX - object.startX;
+      const dy = object.endY - object.startY;
+      const distance = calculateDistanceFeet(dx, dy);
+      
+      // Backend sends 'bearing' field which is actually azimuth (0-360°)
+      // We need to convert it to bearing format (quadrant + 0-90°)
+      if (object.bearing !== undefined && typeof object.bearing === 'number') {
+        // Check if it's azimuth (0-360) or already bearing (0-90)
+        if (object.bearing > 90) {
+          // It's azimuth, convert to bearing
+          const bearingData = azimuthToBearing(object.bearing);
+          object.quadrant = bearingData.quadrant;
+          object.bearing = bearingData.bearing; // Now it's 0-90° bearing
+        } else {
+          // It's already bearing (0-90°), but quadrant might be missing
+          // Calculate quadrant from coordinates if not set
+          if (!object.quadrant) {
+            // Calculate azimuth from coordinates, then convert to bearing to get quadrant
+            let angle = Math.atan2(dy, dx);
+            let degrees = angle * (180 / Math.PI);
+            if (degrees < 0) degrees += 360;
+            // Convert to azimuth (North=0°, clockwise)
+            let azimuth = (90 - degrees) % 360;
+            if (azimuth < 0) azimuth += 360;
+            // Convert azimuth to bearing to get correct quadrant
+            const bearingData = azimuthToBearing(azimuth);
+            object.quadrant = bearingData.quadrant;
+            // Keep the existing bearing value (it's already correct)
+          }
+        }
+        // Always set distance (it might be missing even if bearing exists)
+        object.distance = distance;
+      } else if (!object.quadrant || object.bearing === undefined || !object.distance) {
+        // Calculate from coordinates if not provided
         object.quadrant = calculateQuadrant(dx, dy);
-        object.bearing = calculateBearing(dx, dy);
-        object.distance = calculateDistanceFeet(dx, dy);
+        // calculateBearing returns DMS string, but we need decimal for calculations
+        // Calculate azimuth first, then convert to bearing
+        let angle = Math.atan2(dy, dx);
+        let degrees = angle * (180 / Math.PI);
+        if (degrees < 0) degrees += 360;
+        // Convert to azimuth (North=0°, clockwise)
+        let azimuth = (90 - degrees) % 360;
+        if (azimuth < 0) azimuth += 360;
+        // Convert azimuth to bearing
+        const bearingData = azimuthToBearing(azimuth);
+        object.quadrant = bearingData.quadrant;
+        object.bearing = bearingData.bearing; // 0-90° decimal
+        object.distance = distance;
       }
     }
     
@@ -340,29 +708,61 @@ async function handleObjectUpdate(values) {
     }
   } else if (values && values.type === "segment") {
     try {
-      // Prepare update data
-      const updateData = {
-        startX: values.startX,
-        startY: values.startY,
-        endX: values.endX,
-        endY: values.endY,
-        layer: values.layer || ""
-      };
-
       console.log("handleObjectUpdate called with segment values:", values);
-      console.log("Sending update request:", { 
-        url: `/api/geometry/${sessionId}/segment/${values.id}`,
-        method: "PUT",
-        data: updateData 
-      });
-
-      const response = await fetch(`/api/geometry/${sessionId}/segment/${values.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(updateData)
-      });
+      
+      let response;
+      
+      // Task 2.3.5: If bearings block is opened
+      if (values.activeBlock === "bearings") {
+        // Send request to recalculation endpoint (Task 1.2.3)
+        const updateData = {
+          quadrant: values.quadrant,
+          bearing: values.bearing, // Already in decimal degrees
+          distance: values.distance,
+          blockedPoint: "start_pt" // Default, could be made configurable
+        };
+        
+        console.log("Sending recalculation request:", { 
+          url: `/api/geometry/${sessionId}/segment/${values.id}/recalculate`,
+          method: "PUT",
+          data: updateData 
+        });
+        
+        response = await fetch(`/api/geometry/${sessionId}/segment/${values.id}/recalculate`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(updateData)
+        });
+      } 
+      // Task 2.3.6: If points block is opened
+      else if (values.activeBlock === "points") {
+        // Send request to existing update endpoint
+        const updateData = {
+          startX: values.startX,
+          startY: values.startY,
+          endX: values.endX,
+          endY: values.endY,
+          layer: values.layer || ""
+        };
+        
+        console.log("Sending update request:", { 
+          url: `/api/geometry/${sessionId}/segment/${values.id}`,
+          method: "PUT",
+          data: updateData 
+        });
+        
+        response = await fetch(`/api/geometry/${sessionId}/segment/${values.id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(updateData)
+        });
+      } else {
+        throw new Error("Unknown active block type");
+      }
 
       console.log("Update response status:", response.status, response.statusText);
 
@@ -898,8 +1298,19 @@ function setupDrawingControls() {
           // Calculate properties
           const dx = endX - startX;
           const dy = endY - startY;
-          const quadrant = calculateQuadrant(dx, dy);
-          const bearing = calculateBearing(dx, dy);
+          
+          // Calculate azimuth from coordinates (same as backend does)
+          let angle = Math.atan2(dy, dx);
+          let degrees = angle * (180 / Math.PI);
+          if (degrees < 0) degrees += 360;
+          // Convert to azimuth (North=0°, clockwise)
+          let azimuth = (90 - degrees) % 360;
+          if (azimuth < 0) azimuth += 360;
+          
+          // Convert azimuth to bearing (quadrant + 0-90° decimal)
+          const bearingData = azimuthToBearing(azimuth);
+          const quadrant = bearingData.quadrant;
+          const bearingDecimal = bearingData.bearing; // 0-90° decimal
           const distance = calculateDistanceFeet(dx, dy);
           
           // Open property editor with segment properties
@@ -920,7 +1331,7 @@ function setupDrawingControls() {
                 endX: endX,
                 endY: endY,
                 quadrant: quadrant,
-                bearing: bearing,
+                bearing: bearingDecimal, // Decimal 0-90° (not DMS string)
                 distance: distance,
                 layer: newSegment.layer || ""
               },

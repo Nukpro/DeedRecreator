@@ -164,3 +164,67 @@
   border-color: #9ca3af;
 }
 
+/* Task 2.3.1-2.3.2: Collapsible blocks styles */
+.property-editor__block {
+  margin-bottom: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.property-editor__block:last-child {
+  margin-bottom: 0;
+}
+
+.property-editor__block-header {
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.property-editor__block-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #374151;
+  transition: background-color 0.2s;
+}
+
+.property-editor__block-toggle:hover {
+  background: #f3f4f6;
+}
+
+.property-editor__block-title {
+  flex: 1;
+  text-align: left;
+}
+
+.property-editor__block-icon {
+  font-size: 0.625rem;
+  color: #6b7280;
+  transition: transform 0.2s;
+}
+
+.property-editor__block-toggle[aria-expanded="true"] .property-editor__block-icon {
+  transform: rotate(0deg);
+}
+
+.property-editor__block-toggle[aria-expanded="false"] .property-editor__block-icon {
+  transform: rotate(-90deg);
+}
+
+.property-editor__block-content {
+  padding: 10px;
+  background: #ffffff;
+}
+
+.property-editor__block-content[style*="display: none"] {
+  display: none !important;
+}
+

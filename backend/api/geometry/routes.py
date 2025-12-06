@@ -302,6 +302,105 @@ def update_segment(session_id: int, segment_id: str):
         return jsonify({"success": False, "message": "Internal server error"}), 500
 
 
+@geometry_bp.put("/api/geometry/<int:session_id>/segment/<segment_id>/recalculate")
+def recalculate_segment(session_id: int, segment_id: str):
+    """Recalculate a line segment using bearing and distance."""
+    try:
+        data = request.json or {}
+        current_app.logger.info(f"Recalculating segment {segment_id} in session {session_id} with data: {data}")
+        
+        # Extract and validate required parameters
+        quadrant = data.get("quadrant")
+        bearing = data.get("bearing")
+        distance = data.get("distance")
+        blocked_point = data.get("blockedPoint", "start_pt")
+        
+        # Validate required fields
+        if quadrant is None:
+            return jsonify({"success": False, "message": "quadrant is required"}), 400
+        if bearing is None:
+            return jsonify({"success": False, "message": "bearing is required"}), 400
+        if distance is None:
+            return jsonify({"success": False, "message": "distance is required"}), 400
+        
+        # Validate quadrant
+        if quadrant not in ["NE", "NW", "SW", "SE"]:
+            return jsonify({"success": False, "message": f"Invalid quadrant: {quadrant}. Must be NE, NW, SW, or SE"}), 400
+        
+        # Validate bearing range (0-90)
+        try:
+            bearing_float = float(bearing)
+            if bearing_float < 0 or bearing_float > 90:
+                return jsonify({"success": False, "message": f"Bearing must be in range 0-90 degrees, got {bearing_float}"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"success": False, "message": f"Invalid bearing: {bearing}"}), 400
+        
+        # Validate distance (> 0)
+        try:
+            distance_float = float(distance)
+            if distance_float <= 0:
+                return jsonify({"success": False, "message": f"Distance must be greater than 0, got {distance_float}"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"success": False, "message": f"Invalid distance: {distance}"}), 400
+        
+        # Validate blocked_point
+        if blocked_point not in ["start_pt", "end_pt"]:
+            return jsonify({"success": False, "message": f"blockedPoint must be 'start_pt' or 'end_pt', got {blocked_point}"}), 400
+        
+        geometry_service = get_geometry_service()
+        
+        # Load current geometry
+        site = geometry_service.load_current_geometry(session_id, as_site=True)
+        
+        # Find segment
+        segment = site.get_segment_by_id(segment_id)
+        if not segment:
+            return jsonify({"success": False, "message": f"Segment with id {segment_id} not found"}), 404
+        
+        # Check if it's a LineSegment
+        from backend.domain.vectors import LineSegment
+        if not isinstance(segment, LineSegment):
+            return jsonify({"success": False, "message": f"Segment {segment_id} is not a line segment"}), 400
+        
+        # Call the recalculation method
+        segment.recalculate_by_bearing_and_distance(
+            quadrant=quadrant,
+            bearing=bearing_float,
+            distance=distance_float,
+            blocked_point=blocked_point
+        )
+        
+        # Save with versioning
+        result = geometry_service.save_geometry(session_id, site, action="recalculate_segment")
+        
+        # result is now a Site object
+        from backend.domain.vectors import Site
+        if isinstance(result, Site):
+            site = result
+        else:
+            site = geometry_service.load_current_geometry(session_id, as_site=True)
+        
+        current_app.logger.info(f"Segment {segment_id} recalculated successfully, new version: {site.version}")
+        
+        return jsonify({
+            "success": True,
+            "version": site.version
+        }), 200
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except SessionNotFoundError as e:
+        return jsonify({"success": False, "message": str(e)}), 404
+    except GeometryNotFoundError as e:
+        return jsonify({"success": False, "message": str(e)}), 404
+    except GeometryError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error recalculating segment: {e}", exc_info=True)
+        error_msg = f"Internal server error: {str(e)}"
+        current_app.logger.error(f"Error type: {type(e).__name__}")
+        return jsonify({"success": False, "message": error_msg}), 500
+
+
 @geometry_bp.post("/api/geometry/<int:session_id>/undo")
 def undo_action(session_id: int):
     """Undo last action."""
