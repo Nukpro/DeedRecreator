@@ -116,6 +116,9 @@ export default class PropertyEditor {
       return this.createPointEditor(object);
     }
     if (object.type === "segment") {
+      if (object.segmentType === "arc") {
+        return this.createArcSegmentEditor(object);
+      }
       return this.createSegmentEditor(object);
     }
     return "<div>Unknown object type</div>";
@@ -143,6 +146,130 @@ export default class PropertyEditor {
         <div class="property-editor__field">
           <label for="point-layer">Layer:</label>
           <input type="text" id="point-layer" value="${layer}" placeholder="Enter layer name">
+        </div>
+      </div>
+      <div class="property-editor__footer">
+        <button class="property-editor__btn property-editor__btn--save" type="button">Apply</button>
+        <button class="property-editor__btn property-editor__btn--cancel" type="button">Cancel</button>
+      </div>
+    `;
+  }
+
+  createArcSegmentEditor(segment) {
+    const centerX = segment.center && segment.center.x !== undefined ? segment.center.x.toFixed(4) : "0.0000";
+    const centerY = segment.center && segment.center.y !== undefined ? segment.center.y.toFixed(4) : "0.0000";
+    const radius = segment.radius !== undefined ? segment.radius.toFixed(4) : "0.0000";
+    const rotation = segment.rotation || segment.rot || "cw";
+    const delta = segment.delta !== undefined ? segment.delta.toFixed(2) : "";
+    const length = segment.length !== undefined ? segment.length.toFixed(4) : "0.0000";
+    const startX = (segment.start && segment.start.x !== undefined) || segment.startX !== undefined ? (segment.start ? segment.start.x : segment.startX).toFixed(4) : "0.0000";
+    const startY = (segment.start && segment.start.y !== undefined) || segment.startY !== undefined ? (segment.start ? segment.start.y : segment.startY).toFixed(4) : "0.0000";
+    const endX = (segment.end && segment.end.x !== undefined) || segment.endX !== undefined ? (segment.end ? segment.end.x : segment.endX).toFixed(4) : "0.0000";
+    const endY = (segment.end && segment.end.y !== undefined) || segment.endY !== undefined ? (segment.end ? segment.end.y : segment.endY).toFixed(4) : "0.0000";
+    const layer = segment.layer || "";
+    return `
+      <div class="property-editor__header">
+        <h3>Edit Arc</h3>
+        <button class="property-editor__close" type="button" aria-label="Close">\u00D7</button>
+      </div>
+      <div class="property-editor__body">
+        <div class="property-editor__block" data-block="arc-params">
+          <div class="property-editor__block-header">
+            <button type="button" class="property-editor__block-toggle" aria-expanded="true">
+              <span class="property-editor__block-title">Arc Parameters</span>
+              <span class="property-editor__block-icon">\u25BC</span>
+            </button>
+          </div>
+          <div class="property-editor__block-content" style="display: block;">
+            <div class="property-editor__field">
+              <label>Center X:</label>
+              <input type="number" id="arc-center-x" value="${centerX}" step="0.0001">
+            </div>
+            <div class="property-editor__field">
+              <label>Center Y:</label>
+              <input type="number" id="arc-center-y" value="${centerY}" step="0.0001">
+            </div>
+            <div class="property-editor__field">
+              <label>Radius:</label>
+              <input type="number" id="arc-radius" value="${radius}" step="0.0001">
+            </div>
+            <div class="property-editor__field">
+              <label>Rotation:</label>
+              <select id="arc-rotation"><option value="cw" ${rotation === "cw" ? "selected" : ""}>CW</option><option value="ccw" ${rotation === "ccw" ? "selected" : ""}>CCW</option></select>
+            </div>
+            <div class="property-editor__field">
+              <label>Delta (deg):</label>
+              <input type="number" id="arc-delta" value="${delta}" step="0.01" placeholder="—">
+            </div>
+            <div class="property-editor__field">
+              <label>Length:</label>
+              <input type="number" id="arc-length" value="${length}" step="0.0001">
+            </div>
+          </div>
+        </div>
+        <div class="property-editor__block" data-block="arc-points">
+          <div class="property-editor__block-header">
+            <button type="button" class="property-editor__block-toggle" aria-expanded="false">
+              <span class="property-editor__block-title">Start/End Points</span>
+              <span class="property-editor__block-icon">\u25B6</span>
+            </button>
+          </div>
+          <div class="property-editor__block-content" style="display: none;">
+            <div class="property-editor__field">
+              <label>Start X:</label>
+              <input type="number" id="arc-start-x" value="${startX}" step="0.0001">
+            </div>
+            <div class="property-editor__field">
+              <label>Start Y:</label>
+              <input type="number" id="arc-start-y" value="${startY}" step="0.0001">
+            </div>
+            <div class="property-editor__field">
+              <label>End X:</label>
+              <input type="number" id="arc-end-x" value="${endX}" step="0.0001">
+            </div>
+            <div class="property-editor__field">
+              <label>End Y:</label>
+              <input type="number" id="arc-end-y" value="${endY}" step="0.0001">
+            </div>
+          </div>
+        </div>
+        <div class="property-editor__block" data-block="arc-recreate">
+          <div class="property-editor__block-header">
+            <button type="button" class="property-editor__block-toggle" aria-expanded="false">
+              <span class="property-editor__block-title">Recreate by Bearing to Center</span>
+              <span class="property-editor__block-icon">\u25B6</span>
+            </button>
+          </div>
+          <div class="property-editor__block-content" style="display: none;">
+            <div class="property-editor__field">
+              <label>Quadrant:</label>
+              <select id="arc-recreate-quadrant"><option value="NE">NE</option><option value="NW">NW</option><option value="SW">SW</option><option value="SE">SE</option></select>
+            </div>
+            <div class="property-editor__field">
+              <label>Bearing (0-90):</label>
+              <input type="number" id="arc-recreate-bearing" step="0.01" value="45" min="0" max="90">
+            </div>
+            <div class="property-editor__field">
+              <label>Radius:</label>
+              <input type="number" id="arc-recreate-radius" step="0.0001" value="${radius}">
+            </div>
+            <div class="property-editor__field">
+              <label><input type="radio" name="arc-recreate-measure" value="length" checked> Length:</label>
+              <input type="number" id="arc-recreate-length" step="0.0001" value="${length}">
+            </div>
+            <div class="property-editor__field">
+              <label><input type="radio" name="arc-recreate-measure" value="angle"> Angle (deg):</label>
+              <input type="number" id="arc-recreate-angle" step="0.01" value="${delta || "30"}" min="0" max="360">
+            </div>
+            <div class="property-editor__field">
+              <label>Rotation:</label>
+              <select id="arc-recreate-rotation"><option value="cw" ${rotation === "cw" ? "selected" : ""}>CW</option><option value="ccw" ${rotation === "ccw" ? "selected" : ""}>CCW</option></select>
+            </div>
+          </div>
+        </div>
+        <div class="property-editor__field">
+          <label>Layer:</label>
+          <input type="text" id="arc-layer" value="${layer}" placeholder="Layer name">
         </div>
       </div>
       <div class="property-editor__footer">
@@ -471,7 +598,75 @@ export default class PropertyEditor {
     }
     
     if (currentObject.type === "segment") {
-      // Task 2.3.5-2.3.6: Determine which block is open
+      // Arc segment (Task 6.3.3)
+      if (currentObject.segmentType === "arc") {
+        const arcParamsBlock = element.querySelector('[data-block="arc-params"]');
+        const arcPointsBlock = element.querySelector('[data-block="arc-points"]');
+        const arcRecreateBlock = element.querySelector('[data-block="arc-recreate"]');
+        const arcParamsExpanded = arcParamsBlock && arcParamsBlock.querySelector('.property-editor__block-toggle')?.getAttribute("aria-expanded") === "true";
+        const arcPointsExpanded = arcPointsBlock && arcPointsBlock.querySelector('.property-editor__block-toggle')?.getAttribute("aria-expanded") === "true";
+        const arcRecreateExpanded = arcRecreateBlock && arcRecreateBlock.querySelector('.property-editor__block-toggle')?.getAttribute("aria-expanded") === "true";
+        const layerInput = element.querySelector("#arc-layer");
+        const layerValue = layerInput ? layerInput.value.trim() : "";
+        if (arcRecreateExpanded) {
+          const quadrant = element.querySelector("#arc-recreate-quadrant")?.value || "NE";
+          const bearing = parseFloat(element.querySelector("#arc-recreate-bearing")?.value || "0");
+          const radius = parseFloat(element.querySelector("#arc-recreate-radius")?.value || "0");
+          const useLength = element.querySelector('input[name="arc-recreate-measure"][value="length"]')?.checked;
+          const lengthVal = parseFloat(element.querySelector("#arc-recreate-length")?.value || "0");
+          const angleVal = parseFloat(element.querySelector("#arc-recreate-angle")?.value || "0");
+          const rotation = element.querySelector("#arc-recreate-rotation")?.value || "cw";
+          const startX = currentObject.start?.x ?? currentObject.startX ?? 0;
+          const startY = currentObject.start?.y ?? currentObject.startY ?? 0;
+          if (isNaN(bearing) || bearing < 0 || bearing > 90) {
+            alert("Bearing must be 0-90");
+            return null;
+          }
+          if (radius <= 0) {
+            alert("Radius must be > 0");
+            return null;
+          }
+          if (useLength && (isNaN(lengthVal) || lengthVal <= 0)) {
+            alert("Length must be > 0");
+            return null;
+          }
+          if (!useLength && (isNaN(angleVal) || angleVal <= 0 || angleVal > 360)) {
+            alert("Angle must be > 0 and <= 360");
+            return null;
+          }
+          return {
+            type: "segment",
+            segmentType: "arc",
+            id: currentObject.id,
+            activeBlock: "arc-recreate",
+            startPoint: { x: startX, y: startY },
+            quadrant,
+            bearing,
+            radius,
+            length: useLength ? lengthVal : undefined,
+            angle: useLength ? undefined : angleVal,
+            rotation,
+            layer: layerValue
+          };
+        }
+        if (arcParamsExpanded || arcPointsExpanded) {
+          const startX = parseFloat(element.querySelector("#arc-start-x")?.value) || (currentObject.start && currentObject.start.x) || currentObject.startX;
+          const startY = parseFloat(element.querySelector("#arc-start-y")?.value) || (currentObject.start && currentObject.start.y) || currentObject.startY;
+          const endX = parseFloat(element.querySelector("#arc-end-x")?.value) || (currentObject.end && currentObject.end.x) || currentObject.endX;
+          const endY = parseFloat(element.querySelector("#arc-end-y")?.value) || (currentObject.end && currentObject.end.y) || currentObject.endY;
+          return {
+            type: "segment",
+            segmentType: "arc",
+            id: currentObject.id,
+            activeBlock: arcParamsExpanded ? "arc-params" : "arc-points",
+            startX, startY, endX, endY,
+            layer: layerValue
+          };
+        }
+        alert("Open one of the blocks to apply changes");
+        return null;
+      }
+      // Line segment: Task 2.3.5-2.3.6: Determine which block is open
       const bearingsBlock = element.querySelector('[data-block="bearings"]');
       const pointsBlock = element.querySelector('[data-block="points"]');
       const bearingsExpanded = bearingsBlock && bearingsBlock.querySelector('.property-editor__block-toggle').getAttribute("aria-expanded") === "true";

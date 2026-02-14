@@ -6,7 +6,7 @@ encapsulation and methods for converting to storage and frontend JSON formats.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING, cast
 from datetime import datetime
 import uuid
 import math
@@ -305,7 +305,7 @@ class Point(GeometryObject):
         if isinstance(result, Site):
             return result
         else:
-            return geometry_service.load_current_geometry(session_id, as_site=True)
+            return cast(Site, geometry_service.load_current_geometry(session_id, as_site=True))
 
 
 class Segment(GeometryObject):
@@ -420,7 +420,7 @@ class Segment(GeometryObject):
         if isinstance(result, Site):
             return result
         else:
-            return geometry_service.load_current_geometry(session_id, as_site=True)
+            return cast(Site, geometry_service.load_current_geometry(session_id, as_site=True))
 
 
 class LineSegment(Segment):
@@ -665,6 +665,236 @@ class ArcSegment(Segment):
         """Create ArcSegment from frontend JSON."""
         return cls.from_storage_json(data)
 
+    @staticmethod
+    def create_from_three_points(
+        pt1: Dict[str, float],
+        pt2: Dict[str, float],
+        pt3: Dict[str, float],
+        **kwargs: Any
+    ) -> 'ArcSegment':
+        """
+        Create an arc through three points (pt1, pt2 on arc, pt3).
+        Start of arc is pt1, end is pt3; pt2 is the middle point on the arc (not the center).
+
+        Raises:
+            ValueError: If points are collinear, any two points coincide, or radius is invalid.
+        """
+        x1, y1 = float(pt1['x']), float(pt1['y'])
+        x2, y2 = float(pt2['x']), float(pt2['y'])
+        x3, y3 = float(pt3['x']), float(pt3['y'])
+
+        # Same or duplicate points
+        if (x1, y1) == (x2, y2) or (x2, y2) == (x3, y3) or (x1, y1) == (x3, y3):
+            raise ValueError("All three points must be distinct")
+
+        # Perpendicular bisector of pt1-pt2: midpoint M1, direction V1
+        m1x = (x1 + x2) / 2.0
+        m1y = (y1 + y2) / 2.0
+        v1x = y1 - y2
+        v1y = x2 - x1
+
+        # Perpendicular bisector of pt2-pt3: midpoint M2, direction V2
+        m2x = (x2 + x3) / 2.0
+        m2y = (y2 + y3) / 2.0
+        v2x = y2 - y3
+        v2y = x3 - x2
+
+        # Intersection: M1 + t*V1 = M2 + s*V2  =>  t*(V1) - s*(V2) = M2 - M1
+        # Cross: (M2-M1) x V2 = t*(V1 x V2)  =>  t = (M2-M1)xV2 / (V1xV2)
+        denom = v1x * v2y - v1y * v2x
+        if abs(denom) < 1e-12:
+            raise ValueError("Points are collinear; cannot define a unique circle")
+
+        t = ((m2x - m1x) * v2y - (m2y - m1y) * v2x) / denom
+        cx = m1x + t * v1x
+        cy = m1y + t * v1y
+
+        radius = math.sqrt((x1 - cx) ** 2 + (y1 - cy) ** 2)
+        if not math.isfinite(radius) or radius <= 0:
+            raise ValueError("Calculated radius is not finite or is <= 0")
+
+        # Angles from center (North=0, clockwise, radians): atan2(dx, dy)
+        a1 = math.atan2(x1 - cx, y1 - cy)
+        a2 = math.atan2(x2 - cx, y2 - cy)
+        a3 = math.atan2(x3 - cx, y3 - cy)
+
+        # Normalize to [0, 2*pi)
+        def norm(a: float) -> float:
+            a = a % (2.0 * math.pi)
+            if a < 0:
+                a += 2.0 * math.pi
+            return a
+
+        a1, a2, a3 = norm(a1), norm(a2), norm(a3)
+
+        # Arc from pt1 to pt3 that contains pt2: determine cw or ccw
+        # In North=0,CW system: d_cw_span = angular distance pt1->pt3 going CW (angle increases)
+        d_cw_span = (a3 - a1 + 2.0 * math.pi) % (2.0 * math.pi)
+        d_ccw_span = (a1 - a3 + 2.0 * math.pi) % (2.0 * math.pi)
+        a2_from_pt1_cw = (a2 - a1 + 2.0 * math.pi) % (2.0 * math.pi)
+        # If pt2 lies on the CW arc from pt1 to pt3, draw CW arc
+        if 0 < a2_from_pt1_cw <= d_cw_span:
+            rotation = 'cw'
+            delta_rad = d_cw_span
+        else:
+            rotation = 'ccw'
+            delta_rad = d_ccw_span
+
+        delta_deg = math.degrees(delta_rad)
+        length = radius * delta_rad
+
+        return ArcSegment(
+            start={'x': x1, 'y': y1},
+            end={'x': x3, 'y': y3},
+            center={'x': cx, 'y': cy},
+            radius=radius,
+            rotation=rotation,
+            delta=delta_deg,
+            length=length,
+            **kwargs
+        )
+
+    @staticmethod
+    def create_from_tangent(
+        start_point: Dict[str, float],
+        tangent_direction: float,
+        radius: float,
+        length: Optional[float] = None,
+        angle: Optional[float] = None,
+        rotation: str = 'cw',
+        **kwargs: Any
+    ) -> 'ArcSegment':
+        """
+        Create an arc from a start point with given tangent direction (azimuth),
+        radius, and either arc length or arc angle.
+
+        tangent_direction: azimuth in decimal degrees 0-360 (North=0°, clockwise).
+        """
+        if (length is None) == (angle is None):
+            raise ValueError("Exactly one of length or angle must be provided")
+        if radius <= 0:
+            raise ValueError("Radius must be > 0")
+        if length is not None and length <= 0:
+            raise ValueError("Length must be > 0 when provided")
+        if angle is not None and (angle <= 0 or angle > 360):
+            raise ValueError("Angle must be > 0 and <= 360 when provided")
+        if rotation not in ('cw', 'ccw'):
+            raise ValueError("Rotation must be 'cw' or 'ccw'")
+
+        # Perpendicular to tangent: center is at radius from start in perpendicular direction
+        # cw arc: center is 90° to the right of tangent = azimuth - 90°
+        # ccw arc: center is 90° left = azimuth + 90°
+        az = float(tangent_direction) % 360
+        if rotation == 'cw':
+            perp_az = (az - 90) % 360
+        else:
+            perp_az = (az + 90) % 360
+        perp_rad = math.radians(perp_az)
+        # Unit vector (North=0, clockwise): (sin(az), cos(az)) for (x, y)
+        cx = start_point['x'] + radius * math.sin(perp_rad)
+        cy = start_point['y'] + radius * math.cos(perp_rad)
+
+        start_angle_rad = math.atan2(
+            start_point['x'] - cx,
+            start_point['y'] - cy
+        )
+        if length is not None:
+            angle_rad = length / radius
+            angle_deg = math.degrees(angle_rad)
+        else:
+            assert angle is not None
+            angle_deg = float(angle)
+            angle_rad = math.radians(angle_deg)
+
+        if rotation == 'cw':
+            end_angle_rad = start_angle_rad - angle_rad
+        else:
+            end_angle_rad = start_angle_rad + angle_rad
+
+        end_x = cx + radius * math.sin(end_angle_rad)
+        end_y = cy + radius * math.cos(end_angle_rad)
+        arc_length = radius * angle_rad
+
+        return ArcSegment(
+            start={'x': float(start_point['x']), 'y': float(start_point['y'])},
+            end={'x': end_x, 'y': end_y},
+            center={'x': cx, 'y': cy},
+            radius=radius,
+            rotation=rotation,
+            delta=angle_deg,
+            length=arc_length,
+            **kwargs
+        )
+
+    @staticmethod
+    def create_from_bearing_to_center(
+        start_point: Dict[str, float],
+        quadrant: str,
+        bearing: float,
+        radius: float,
+        length: Optional[float] = None,
+        angle: Optional[float] = None,
+        rotation: str = 'cw',
+        **kwargs: Any
+    ) -> 'ArcSegment':
+        """
+        Create an arc from a start point, direction to center (quadrant + bearing),
+        radius, and either arc length or arc angle.
+        """
+        if (length is None) == (angle is None):
+            raise ValueError("Exactly one of length or angle must be provided")
+        quadrant = quadrant.upper()
+        if quadrant not in ('NE', 'NW', 'SW', 'SE'):
+            raise ValueError("Quadrant must be NE, NW, SW, or SE")
+        if bearing < 0 or bearing > 90:
+            raise ValueError("Bearing must be in range 0-90 degrees")
+        if radius <= 0:
+            raise ValueError("Radius must be > 0")
+        if length is not None and length <= 0:
+            raise ValueError("Length must be > 0 when provided")
+        if angle is not None and (angle <= 0 or angle > 360):
+            raise ValueError("Angle must be > 0 and <= 360 when provided")
+        if rotation not in ('cw', 'ccw'):
+            raise ValueError("Rotation must be 'cw' or 'ccw'")
+
+        azimuth = bearing_to_azimuth(quadrant, bearing)
+        az_rad = math.radians(azimuth)
+        # Center is at distance radius from start_point in direction of azimuth
+        cx = start_point['x'] + radius * math.sin(az_rad)
+        cy = start_point['y'] + radius * math.cos(az_rad)
+
+        start_angle_rad = math.atan2(
+            start_point['x'] - cx,
+            start_point['y'] - cy
+        )
+        if length is not None:
+            angle_rad = length / radius
+            angle_deg = math.degrees(angle_rad)
+        else:
+            assert angle is not None
+            angle_deg = float(angle)
+            angle_rad = math.radians(angle_deg)
+
+        if rotation == 'cw':
+            end_angle_rad = start_angle_rad - angle_rad
+        else:
+            end_angle_rad = start_angle_rad + angle_rad
+
+        end_x = cx + radius * math.sin(end_angle_rad)
+        end_y = cy + radius * math.cos(end_angle_rad)
+        arc_length = radius * angle_rad
+
+        return ArcSegment(
+            start={'x': float(start_point['x']), 'y': float(start_point['y'])},
+            end={'x': end_x, 'y': end_y},
+            center={'x': cx, 'y': cy},
+            radius=radius,
+            rotation=rotation,
+            delta=angle_deg,
+            length=arc_length,
+            **kwargs
+        )
+
 
 class Geometry(GeometryObject):
     """Represents a geometry object containing segments."""
@@ -779,7 +1009,7 @@ class Geometry(GeometryObject):
         if isinstance(result, Site):
             return result
         else:
-            return geometry_service.load_current_geometry(session_id, as_site=True)
+            return cast(Site, geometry_service.load_current_geometry(session_id, as_site=True))
 
 
 class Parcel(GeometryObject):
@@ -934,7 +1164,7 @@ class Parcel(GeometryObject):
         if isinstance(result, Site):
             return result
         else:
-            return geometry_service.load_current_geometry(session_id, as_site=True)
+            return cast(Site, geometry_service.load_current_geometry(session_id, as_site=True))
 
 
 class GeometryLayer(GeometryObject):
@@ -1075,7 +1305,7 @@ class GeometryLayer(GeometryObject):
         if isinstance(result, Site):
             return result
         else:
-            return geometry_service.load_current_geometry(session_id, as_site=True)
+            return cast(Site, geometry_service.load_current_geometry(session_id, as_site=True))
 
 
 class Site(GeometryObject):
@@ -1423,5 +1653,5 @@ class Site(GeometryObject):
         if isinstance(result, Site):
             return result
         else:
-            return geometry_service.load_current_geometry(session_id, as_site=True)
+            return cast(Site, geometry_service.load_current_geometry(session_id, as_site=True))
 

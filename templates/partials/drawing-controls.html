@@ -33,12 +33,32 @@
     <button
         class="drawing-btn"
         type="button"
-        data-mode="arcs"
+        data-mode="arcs-three-points"
         data-state="inactive"
         aria-pressed="false"
-        title="Draw arc segments">
+        title="Draw arc by 3 points">
         <span class="drawing-btn__icon" aria-hidden="true">⌒</span>
         <span class="drawing-btn__label">Arc</span>
+    </button>
+    <button
+        class="drawing-btn"
+        type="button"
+        data-mode="arcs-tangent"
+        data-state="inactive"
+        aria-pressed="false"
+        title="Draw arc from tangent (snap to line/arc end)">
+        <span class="drawing-btn__icon" aria-hidden="true">◜</span>
+        <span class="drawing-btn__label">Arc T</span>
+    </button>
+    <button
+        class="drawing-btn"
+        type="button"
+        data-mode="arcs-bearing-to-center"
+        data-state="inactive"
+        aria-pressed="false"
+        title="Draw arc by bearing to center">
+        <span class="drawing-btn__icon" aria-hidden="true">◠</span>
+        <span class="drawing-btn__label">Arc B</span>
     </button>
     <button
         class="drawing-btn"

@@ -4,7 +4,7 @@ import json
 import math
 import uuid
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, cast
 
 from flask import current_app
 
@@ -371,6 +371,71 @@ class GeometryService:
         except Exception as e:
             current_app.logger.error(f"Error in add_segment: {e}", exc_info=True)
             raise
+
+    def add_arc(
+        self,
+        session_id: int,
+        arc_segment: ArcSegment,
+        attributes: Optional[Dict[str, Any]] = None
+    ) -> Site:
+        """
+        Add an arc segment to the geometry.
+        Loads current geometry, gets or creates default layer/parcel,
+        adds the arc via geometry.add_segment(), saves with action 'add_arc'.
+        """
+        site = cast(Site, self.load_current_geometry(session_id, as_site=True))
+        if site.session_id is None:
+            site.session_id = session_id
+        default_layer = self._get_or_create_default_layer(site)
+        default_parcel = self._get_or_create_default_parcel(default_layer)
+        geometry = self._get_or_create_default_geometry(default_parcel)
+        if attributes:
+            arc_segment.attributes.update(attributes)
+        geometry.add_segment(arc_segment)
+        result = self.save_geometry(session_id, site, action="add_arc")
+        return cast(Site, result)
+
+    def recalculate_arc(
+        self,
+        session_id: int,
+        arc_id: str,
+        start_point: Dict[str, float],
+        quadrant: str,
+        bearing: float,
+        radius: float,
+        length: Optional[float] = None,
+        angle: Optional[float] = None,
+        rotation: str = 'cw'
+    ) -> Site:
+        """
+        Recalculate an arc segment using bearing-to-center parameters.
+        Replaces the existing arc with a new one (same id) and saves.
+        """
+        site = cast(Site, self.load_current_geometry(session_id, as_site=True))
+        segment = site.get_segment_by_id(arc_id)
+        if not segment:
+            raise GeometryNotFoundError(f"Segment with id {arc_id} not found")
+        if not isinstance(segment, ArcSegment):
+            raise GeometryError(f"Segment {arc_id} is not an arc segment")
+        new_arc = ArcSegment.create_from_bearing_to_center(
+            start_point=start_point,
+            quadrant=quadrant,
+            bearing=bearing,
+            radius=radius,
+            length=length,
+            angle=angle,
+            rotation=rotation,
+            id=arc_id,
+            layer=segment.layer,
+            attributes=segment.attributes
+        )
+        for layer in site.geometry_layers:
+            for parcel in layer.parcels:
+                if parcel.geometry and parcel.geometry.remove_segment(arc_id):
+                    parcel.geometry.add_segment(new_arc)
+                    result = self.save_geometry(session_id, site, action="recalculate_arc")
+                    return cast(Site, result)
+        raise GeometryNotFoundError(f"Arc {arc_id} not found in geometry")
 
     def update_segment(
         self,

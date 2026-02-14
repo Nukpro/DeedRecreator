@@ -101,8 +101,8 @@ function dmsToDecimal(dmsString) {
   const minutes = parseInt(match[2], 10);
   const seconds = parseFloat(match[3]);
   
-  if (minutes >= 60 || seconds >= 60) {
-    throw new Error(`Invalid DMS values: minutes=${minutes}, seconds=${seconds} (must be < 60)`);
+  if (minutes < 0 || minutes >= 60 || seconds < 0 || seconds >= 60) {
+    throw new Error(`Invalid DMS values: minutes=${minutes}, seconds=${seconds} (must be in range 0-59)`);
   }
   
   const decimal = degrees + (minutes / 60) + (seconds / 3600);
@@ -713,8 +713,36 @@ async function handleObjectUpdate(values) {
       
       let response;
       
-      // Task 2.3.5: If bearings block is opened
-      if (values.activeBlock === "bearings") {
+      // Task 6.3.3.1.3.1: Arc - Recreate by Bearing to Center
+      if (values.segmentType === "arc" && values.activeBlock === "arc-recreate") {
+        const body = {
+          startPoint: values.startPoint || { x: values.startX, y: values.startY },
+          quadrant: values.quadrant,
+          bearing: values.bearing,
+          radius: values.radius,
+          rotation: values.rotation || "cw"
+        };
+        if (values.length != null) body.length = values.length;
+        else body.angle = values.angle;
+        response = await fetch(`/api/geometry/${sessionId}/arc/${values.id}/recalculate`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      } else if (values.segmentType === "arc" && (values.activeBlock === "arc-params" || values.activeBlock === "arc-points")) {
+        const updateData = {
+          startX: values.startX,
+          startY: values.startY,
+          endX: values.endX,
+          endY: values.endY,
+          layer: values.layer || ""
+        };
+        response = await fetch(`/api/geometry/${sessionId}/segment/${values.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updateData)
+        });
+      } else if (values.activeBlock === "bearings") {
         // Send request to recalculation endpoint (Task 1.2.3)
         const updateData = {
           quadrant: values.quadrant,
@@ -878,6 +906,24 @@ function handleSelectedFile(file, statusElement) {
   showMessage(statusElement, `Selected "${file.name}" (${sizeInMb} MB).`, false);
 }
 
+// Extract filename from imageUrl
+function extractImageFilename(imageUrl) {
+  // Remove query parameters
+  const urlWithoutParams = imageUrl.split('?')[0];
+  
+  // Extract filename from path
+  const pathParts = urlWithoutParams.split('/');
+  const filename = pathParts[pathParts.length - 1];
+  
+  // Remove extension for alignment.json filename
+  const nameWithoutExt = filename.replace(/\.(png|jpg|jpeg)$/i, '');
+  
+  return {
+    fullFilename: filename,
+    nameWithoutExt: nameWithoutExt
+  };
+}
+
 async function displayRasterPreview(imageUrl, statusElement, metadata = {}) {
   if (!imageUrl) {
     if (geometryViewer && typeof geometryViewer.setRasterSource === "function") {
@@ -918,6 +964,40 @@ async function displayRasterPreview(imageUrl, statusElement, metadata = {}) {
         boundaryBox,
         size
       });
+      
+      // Load alignment.json after setting raster source
+      try {
+        const getSessionId = () => {
+          if (window.sessionData && window.sessionData.id) {
+            return window.sessionData.id;
+          }
+          const urlParams = new URLSearchParams(window.location.search);
+          const sessionId = urlParams.get("session_id");
+          return sessionId ? parseInt(sessionId, 10) : null;
+        };
+        
+        const sessionId = getSessionId();
+        if (sessionId) {
+          const { nameWithoutExt } = extractImageFilename(imageUrl);
+          const alignmentUrl = `/api/alignment/${sessionId}/${nameWithoutExt}.png`;
+          
+          const alignmentResponse = await fetch(alignmentUrl);
+          if (alignmentResponse.ok) {
+            const alignmentData = await alignmentResponse.json();
+            if (geometryViewer && typeof geometryViewer.setImageAlignment === "function") {
+              geometryViewer.setImageAlignment(alignmentData);
+            }
+          } else if (alignmentResponse.status === 404) {
+            // Alignment file doesn't exist yet, use default (no rotation, default boundary box)
+            console.log("Alignment file not found, using defaults");
+          } else {
+            console.warn("Failed to load alignment:", alignmentResponse.status);
+          }
+        }
+      } catch (alignmentError) {
+        console.warn("Error loading alignment.json:", alignmentError);
+        // Continue with default display
+      }
     }
   } catch (error) {
     console.error("Failed to display raster preview:", error);
@@ -1061,81 +1141,6 @@ function setupUploadControls() {
       showMessage(status, "An unexpected error occurred during upload.", true);
     }
   });
-}
-
-function setupAlignmentControls() {
-  const applyBasePointButton = document.getElementById("apply-base-point");
-  const basePointStatus = document.getElementById("base-point-status");
-
-  if (applyBasePointButton) {
-    applyBasePointButton.addEventListener("click", () => {
-      const xInput = document.getElementById("base-point-x");
-      const yInput = document.getElementById("base-point-y");
-      const xValue = xInput ? Number(xInput.value) : null;
-      const yValue = yInput ? Number(yInput.value) : null;
-
-      if (
-        xValue === null ||
-        Number.isNaN(xValue) ||
-        yValue === null ||
-        Number.isNaN(yValue)
-      ) {
-        showMessage(
-          basePointStatus,
-          "Base point values are invalid. Please enter numeric coordinates.",
-          true
-        );
-        return;
-      }
-
-      showMessage(
-        basePointStatus,
-        `Base point set to X: ${xValue.toFixed(2)}, Y: ${yValue.toFixed(2)}.`,
-        false
-      );
-      recordAction(`Base point updated to (${xValue}, ${yValue}).`);
-    });
-  }
-
-  const referenceLineButton = document.getElementById("toggle-reference-line");
-  const referenceLineInputs = document.getElementById("reference-line-inputs");
-  const referenceLineStatus = document.getElementById("reference-line-status");
-
-  if (referenceLineButton && referenceLineInputs) {
-    referenceLineButton.addEventListener("click", () => {
-      referenceLineActive = !referenceLineActive;
-      referenceLineInputs.classList.toggle("active", referenceLineActive);
-      referenceLineButton.textContent = referenceLineActive
-        ? "Deactivate Reference Line"
-        : "Activate Reference Line";
-
-      if (referenceLineActive) {
-        showMessage(
-          referenceLineStatus,
-          "Reference line inputs are active. Provide distance, quadrant, and bearing.",
-          false
-        );
-        recordAction("Reference line activated.");
-      } else {
-        showMessage(referenceLineStatus, "Reference line inputs hidden.", false);
-        recordAction("Reference line deactivated.");
-      }
-    });
-  }
-
-  const undoButton = document.getElementById("undo-action");
-  if (undoButton) {
-    undoButton.addEventListener("click", () => {
-      if (actionHistory.length === 0) {
-        // eslint-disable-next-line no-alert
-        alert("There is nothing to undo yet.");
-        return;
-      }
-      const lastAction = actionHistory.pop();
-      // eslint-disable-next-line no-alert
-      alert(`Undo placeholder: ${lastAction.description}`);
-    });
-  }
 }
 
 function setupExportControls() {
@@ -1362,6 +1367,199 @@ function setupDrawingControls() {
     console.log(`Segment: start (${startX.toFixed(3)}, ${startY.toFixed(3)}), end (${endX.toFixed(3)}, ${endY.toFixed(3)})`);
     saveSegment(startX, startY, endX, endY);
   };
+
+  // Task 6.1.5.2: Save arc from three points and open property editor
+  const saveArcFromThreePoints = async (pt1, pt2, pt3) => {
+    const sessionId = getSessionId();
+    if (!sessionId) {
+      console.error("No session ID available");
+      return;
+    }
+    try {
+      const response = await fetch(`/api/geometry/${sessionId}/arc/from-three-points`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pt1: { x: pt1.x, y: pt1.y },
+          pt2: { x: pt2.x, y: pt2.y },
+          pt3: { x: pt3.x, y: pt3.y }
+        })
+      });
+      if (response.ok) {
+        const result = await response.json();
+        const data = await loadGeometry(true);
+        if (data && result.arc) {
+          if (propertyEditor && geometryViewer) {
+            const canvasPos = geometryViewer.worldToCanvas(result.arc.end.x, result.arc.end.y);
+            const containerRect = document.getElementById("geometry-viewer").getBoundingClientRect();
+            propertyEditor.show(
+              {
+                type: "segment",
+                id: result.arc.id,
+                segmentType: "arc",
+                startX: result.arc.start.x,
+                startY: result.arc.start.y,
+                endX: result.arc.end.x,
+                endY: result.arc.end.y,
+                center: result.arc.center,
+                radius: result.arc.radius,
+                rotation: result.arc.rotation || result.arc.rot,
+                delta: result.arc.delta,
+                length: result.arc.length,
+                layer: result.arc.layer || ""
+              },
+              { x: containerRect.left + canvasPos.x, y: containerRect.top + canvasPos.y },
+              (values) => handleObjectUpdate(values),
+              () => {}
+            );
+          }
+        }
+      } else {
+        const err = await response.json().catch(async () => ({ message: await response.text() }));
+        alert(err.message || "Failed to create arc");
+      }
+    } catch (error) {
+      console.error("Error saving arc:", error);
+      alert("Error creating arc: " + error.message);
+    }
+  };
+
+  // Task 6.2.4.2.3: Dialog for tangent arc (radius, length or angle, rotation)
+  function showArcTangentDialog(point, tangentDirection, onConfirm) {
+    const div = document.createElement("div");
+    div.className = "arc-dialog-overlay";
+    div.innerHTML = `
+      <div class="arc-dialog">
+        <h4>Arc from tangent</h4>
+        <label>Radius: <input type="number" id="arc-tan-radius" step="0.0001" value="10"></label>
+        <label><input type="radio" name="arc-tan-measure" value="length" checked> Length: <input type="number" id="arc-tan-length" step="0.0001" value="5"></label>
+        <label><input type="radio" name="arc-tan-measure" value="angle"> Angle (deg): <input type="number" id="arc-tan-angle" step="0.01" value="30" min="0" max="360"></label>
+        <label>Rotation: <select id="arc-tan-rotation"><option value="cw">CW</option><option value="ccw">CCW</option></select></label>
+        <div><button type="button" id="arc-tan-ok">OK</button> <button type="button" id="arc-tan-cancel">Cancel</button></div>
+      </div>`;
+    div.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9999";
+    document.body.appendChild(div);
+    const ok = () => {
+      const radius = parseFloat(div.querySelector("#arc-tan-radius").value);
+      const useLength = div.querySelector('input[name="arc-tan-measure"][value="length"]').checked;
+      const lengthOrAngle = useLength ? parseFloat(div.querySelector("#arc-tan-length").value) : parseFloat(div.querySelector("#arc-tan-angle").value);
+      const rotation = div.querySelector("#arc-tan-rotation").value;
+      div.remove();
+      onConfirm(radius, lengthOrAngle, useLength, rotation);
+    };
+    div.querySelector("#arc-tan-ok").addEventListener("click", ok);
+    div.querySelector("#arc-tan-cancel").addEventListener("click", () => div.remove());
+  }
+
+  // Task 6.3.5.2.2: Dialog for bearing-to-center arc
+  function showArcBearingDialog(point, onConfirm) {
+    const div = document.createElement("div");
+    div.className = "arc-dialog-overlay";
+    div.innerHTML = `
+      <div class="arc-dialog">
+        <h4>Arc by bearing to center</h4>
+        <label>Quadrant: <select id="arc-bear-quadrant"><option value="NE">NE</option><option value="NW">NW</option><option value="SW">SW</option><option value="SE">SE</option></select></label>
+        <label>Bearing (decimal 0-90): <input type="number" id="arc-bear-bearing" step="0.01" value="45" min="0" max="90"></label>
+        <label>Radius: <input type="number" id="arc-bear-radius" step="0.0001" value="10"></label>
+        <label><input type="radio" name="arc-bear-measure" value="length" checked> Length: <input type="number" id="arc-bear-length" step="0.0001" value="5"></label>
+        <label><input type="radio" name="arc-bear-measure" value="angle"> Angle (deg): <input type="number" id="arc-bear-angle" step="0.01" value="30" min="0" max="360"></label>
+        <label>Rotation: <select id="arc-bear-rotation"><option value="cw">CW</option><option value="ccw">CCW</option></select></label>
+        <div><button type="button" id="arc-bear-ok">OK</button> <button type="button" id="arc-bear-cancel">Cancel</button></div>
+      </div>`;
+    div.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9999";
+    document.body.appendChild(div);
+    const ok = () => {
+      const quadrant = div.querySelector("#arc-bear-quadrant").value;
+      const bearingDecimal = parseFloat(div.querySelector("#arc-bear-bearing").value);
+      const radius = parseFloat(div.querySelector("#arc-bear-radius").value);
+      const useLength = div.querySelector('input[name="arc-bear-measure"][value="length"]').checked;
+      const lengthOrAngle = useLength ? parseFloat(div.querySelector("#arc-bear-length").value) : parseFloat(div.querySelector("#arc-bear-angle").value);
+      const rotation = div.querySelector("#arc-bear-rotation").value;
+      div.remove();
+      onConfirm(quadrant, bearingDecimal, radius, lengthOrAngle, useLength, rotation);
+    };
+    div.querySelector("#arc-bear-ok").addEventListener("click", ok);
+    div.querySelector("#arc-bear-cancel").addEventListener("click", () => div.remove());
+  }
+
+  // Task 6.2.4.3: Save arc from tangent (after user fills dialog)
+  const saveArcFromTangent = async (startPoint, tangentDirection, radius, lengthOrAngle, useLength, rotation) => {
+    const sessionId = getSessionId();
+    if (!sessionId) return;
+    const body = {
+      startPoint: { x: startPoint.x, y: startPoint.y },
+      tangentDirection,
+      radius,
+      rotation: rotation || "cw"
+    };
+    if (useLength) body.length = lengthOrAngle; else body.angle = lengthOrAngle;
+    try {
+      const response = await fetch(`/api/geometry/${sessionId}/arc/from-tangent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (response.ok) {
+        await loadGeometry(true);
+        const result = await response.json();
+        if (result.arc && propertyEditor && geometryViewer) {
+          const canvasPos = geometryViewer.worldToCanvas(result.arc.end.x, result.arc.end.y);
+          const containerRect = document.getElementById("geometry-viewer").getBoundingClientRect();
+          propertyEditor.show(
+            { type: "segment", id: result.arc.id, segmentType: "arc", ...result.arc },
+            { x: containerRect.left + canvasPos.x, y: containerRect.top + canvasPos.y },
+            (values) => handleObjectUpdate(values),
+            () => {}
+          );
+        }
+      } else {
+        const err = await response.json().catch(async () => ({ message: await response.text() }));
+        alert(err.message || "Failed to create arc");
+      }
+    } catch (error) {
+      alert("Error: " + error.message);
+    }
+  };
+
+  // Task 6.3.5.3: Save arc from bearing to center (after user fills dialog)
+  const saveArcFromBearingToCenter = async (startPoint, quadrant, bearingDecimal, radius, lengthOrAngle, useLength, rotation) => {
+    const sessionId = getSessionId();
+    if (!sessionId) return;
+    const body = {
+      startPoint: { x: startPoint.x, y: startPoint.y },
+      quadrant,
+      bearing: bearingDecimal,
+      radius,
+      rotation: rotation || "cw"
+    };
+    if (useLength) body.length = lengthOrAngle; else body.angle = lengthOrAngle;
+    try {
+      const response = await fetch(`/api/geometry/${sessionId}/arc/from-bearing-to-center`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (response.ok) {
+        await loadGeometry(true);
+        const result = await response.json();
+        if (result.arc && propertyEditor && geometryViewer) {
+          const canvasPos = geometryViewer.worldToCanvas(result.arc.end.x, result.arc.end.y);
+          const containerRect = document.getElementById("geometry-viewer").getBoundingClientRect();
+          propertyEditor.show(
+            { type: "segment", id: result.arc.id, segmentType: "arc", ...result.arc },
+            { x: containerRect.left + canvasPos.x, y: containerRect.top + canvasPos.y },
+            (values) => handleObjectUpdate(values),
+            () => {}
+          );
+        }
+      } else {
+        const err = await response.json().catch(async () => ({ message: await response.text() }));
+        alert(err.message || "Failed to create arc");
+      }
+    } catch (error) {
+      alert("Error: " + error.message);
+    }
+  };
   
   // Update button states
   const updateButtonStates = (activeMode) => {
@@ -1533,18 +1731,31 @@ function setupDrawingControls() {
         console.log("Setting geometryViewer to segments mode");
         console.log("handleSegmentClick type:", typeof handleSegmentClick, handleSegmentClick);
         geometryViewer.setDrawingMode("segments", handleSegmentClick);
+      } else if (mode === "arcs-three-points") {
+        geometryViewer.setDrawingMode("arcs-three-points", saveArcFromThreePoints);
+      } else if (mode === "arcs-tangent") {
+        geometryViewer.setDrawingMode("arcs-tangent", (point, tangentDir) => {
+          showArcTangentDialog(point, tangentDir, (radius, lengthOrAngle, useLength, rotation) => {
+            saveArcFromTangent(point, tangentDir, radius, lengthOrAngle, useLength, rotation);
+          });
+        });
+      } else if (mode === "arcs-bearing-to-center") {
+        geometryViewer.setDrawingMode("arcs-bearing-to-center", (point) => {
+          showArcBearingDialog(point, (quadrant, bearingDecimal, radius, lengthOrAngle, useLength, rotation) => {
+            saveArcFromBearingToCenter(point, quadrant, bearingDecimal, radius, lengthOrAngle, useLength, rotation);
+          });
+        });
       } else if (mode === "polygon-select") {
         console.log("Setting geometryViewer to polygon-select mode");
         // Create new SelectionSet when starting polygon selection
         currentSelectionSet = new SelectionSet();
         console.log("New SelectionSet created for polygon selection");
         
-        // Set polygon selection mode if geometryViewer supports it
+        // Set polygon select mode if geometryViewer supports it
         if (typeof geometryViewer.setPolygonSelectMode === "function") {
           geometryViewer.setPolygonSelectMode(handlePolygonSelect);
         } else {
           console.warn("Polygon select mode not yet implemented in geometryViewer");
-          // For now, just set drawing mode to null and show a message
           geometryViewer.setDrawingMode(null);
         }
       } else if (mode === "cursor" || mode === null) {
@@ -1978,6 +2189,358 @@ function setupToolBlockToggles() {
   });
 }
 
+function setupAlignmentControls() {
+  // Wait for geometryViewer to be available
+  if (!geometryViewer) {
+    console.warn("GeometryViewer not available for alignment controls, will retry");
+    setTimeout(() => {
+      if (geometryViewer) {
+        setupAlignmentControls();
+      }
+    }, 100);
+    return;
+  }
+
+  // Initialize alignment overlay data storage
+  if (!geometryViewer.alignmentOverlay) {
+    geometryViewer.alignmentOverlay = {
+      basePoint: null,
+      referenceLine: null
+    };
+  }
+
+  // Only override render once
+  if (!geometryViewer._alignmentRenderOverridden) {
+    // Store original render method
+    const originalRender = geometryViewer.render.bind(geometryViewer);
+    
+    // Override render to include alignment overlays
+    geometryViewer.render = function() {
+      originalRender();
+    
+    // Render alignment base point (orange)
+    if (this.alignmentOverlay && this.alignmentOverlay.basePoint) {
+      const pointStyle = {
+        size: 6,
+        color: "#ff8800", // Orange
+        stroke: "#ffffff",
+        strokeWidth: 2
+      };
+      this.renderPoint(
+        this.alignmentOverlay.basePoint.x,
+        this.alignmentOverlay.basePoint.y,
+        pointStyle
+      );
+    }
+    
+    // Render alignment reference line (orange)
+    if (this.alignmentOverlay && this.alignmentOverlay.referenceLine) {
+      const { start_pt, end_pt } = this.alignmentOverlay.referenceLine;
+      const startCanvas = this.worldToCanvas(start_pt[0], start_pt[1]);
+      const endCanvas = this.worldToCanvas(end_pt[0], end_pt[1]);
+      
+      this.ctx.beginPath();
+      this.ctx.moveTo(startCanvas.x, startCanvas.y);
+      this.ctx.lineTo(endCanvas.x, endCanvas.y);
+      this.ctx.strokeStyle = "#ff8800"; // Orange
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+    }
+    };
+    
+    geometryViewer._alignmentRenderOverridden = true;
+  }
+
+  // Select base point button handler
+  const selectBasePointBtn = document.getElementById("select-base-point");
+  if (selectBasePointBtn) {
+    let basePointMode = false;
+    
+    selectBasePointBtn.addEventListener("click", () => {
+      if (basePointMode) {
+        // Cancel mode if already active
+        basePointMode = false;
+        geometryViewer.setDrawingMode(null);
+        selectBasePointBtn.textContent = "Select base point";
+        selectBasePointBtn.classList.remove("active");
+        return;
+      }
+
+      // Enable base point selection mode
+      basePointMode = true;
+      selectBasePointBtn.textContent = "Cancel";
+      selectBasePointBtn.classList.add("active");
+
+      // Remove previous base point
+      if (geometryViewer.alignmentOverlay.basePoint) {
+        geometryViewer.alignmentOverlay.basePoint = null;
+        geometryViewer.render();
+      }
+
+      // Set up point click handler
+      const handleBasePointClick = (x, y, canvasX, canvasY) => {
+        // Store base point
+        geometryViewer.alignmentOverlay.basePoint = { x, y };
+        
+        // Update input fields
+        const xInput = document.getElementById("base-point-x");
+        const yInput = document.getElementById("base-point-y");
+        if (xInput) xInput.value = x.toFixed(3);
+        if (yInput) yInput.value = y.toFixed(3);
+
+        // Exit mode
+        basePointMode = false;
+        geometryViewer.setDrawingMode(null);
+        selectBasePointBtn.textContent = "Select base point";
+        selectBasePointBtn.classList.remove("active");
+        
+        // Render to show the point
+        geometryViewer.render();
+      };
+
+      geometryViewer.setDrawingMode("points", handleBasePointClick);
+    });
+  }
+
+  // Draw reference line button handler
+  const drawReferenceLineBtn = document.getElementById("draw-reference-line");
+  if (drawReferenceLineBtn) {
+    let referenceLineMode = false;
+    let lineStartPoint = null;
+    
+    drawReferenceLineBtn.addEventListener("click", () => {
+      if (referenceLineMode) {
+        // Cancel mode if already active
+        referenceLineMode = false;
+        lineStartPoint = null;
+        geometryViewer.setDrawingMode(null);
+        drawReferenceLineBtn.textContent = "Draw reference line";
+        drawReferenceLineBtn.classList.remove("active");
+        return;
+      }
+
+      // Enable reference line drawing mode
+      referenceLineMode = true;
+      drawReferenceLineBtn.textContent = "Cancel";
+      drawReferenceLineBtn.classList.add("active");
+
+      // Remove previous reference line
+      if (geometryViewer.alignmentOverlay.referenceLine) {
+        geometryViewer.alignmentOverlay.referenceLine = null;
+        geometryViewer.render();
+      }
+
+      // Set up segment click handler (two points make a line)
+      const handleReferenceLineClick = (startX, startY, endX, endY, canvasX1, canvasY1, canvasX2, canvasY2) => {
+        // Store reference line
+        geometryViewer.alignmentOverlay.referenceLine = {
+          start_pt: [startX, startY],
+          end_pt: [endX, endY]
+        };
+
+        // Exit mode
+        referenceLineMode = false;
+        lineStartPoint = null;
+        geometryViewer.setDrawingMode(null);
+        drawReferenceLineBtn.textContent = "Draw reference line";
+        drawReferenceLineBtn.classList.remove("active");
+        
+        // Render to show the line
+        geometryViewer.render();
+      };
+
+      geometryViewer.setDrawingMode("segments", handleReferenceLineClick);
+    });
+  }
+
+  // Apply button handler
+  const applyBtn = document.getElementById("apply-point-reference");
+  if (applyBtn) {
+    applyBtn.addEventListener("click", () => {
+      // Get form values
+      const basePointXInput = document.getElementById("base-point-x");
+      const basePointYInput = document.getElementById("base-point-y");
+      const bearingSelect = document.getElementById("reference-bearing");
+      const angleInput = document.getElementById("reference-angle");
+      const distanceInput = document.getElementById("reference-distance");
+
+      // Validation
+      const errors = [];
+
+      // Check base point
+      if (!geometryViewer.alignmentOverlay.basePoint) {
+        errors.push("Base point must be selected");
+      }
+
+      // Check coordinates from input fields
+      const basePointX = basePointXInput ? parseFloat(basePointXInput.value) : NaN;
+      const basePointY = basePointYInput ? parseFloat(basePointYInput.value) : NaN;
+      if (isNaN(basePointX) || isNaN(basePointY)) {
+        errors.push("Base point coordinates (X, Y) must be provided");
+      }
+
+      // Check reference line
+      if (!geometryViewer.alignmentOverlay.referenceLine) {
+        errors.push("Reference line must be drawn");
+      }
+
+      // Check bearing
+      const bearing = bearingSelect ? bearingSelect.value : "";
+      if (!bearing) {
+        errors.push("Bearing must be selected");
+      }
+
+      // Check angle
+      const angleText = angleInput ? angleInput.value.trim() : "";
+      if (!angleText) {
+        errors.push("Angle must be provided");
+      }
+
+      // Check distance
+      const distance = distanceInput ? parseFloat(distanceInput.value) : NaN;
+      if (isNaN(distance) || distance <= 0) {
+        errors.push("Distance must be a positive number");
+      }
+
+      // If validation fails, show errors
+      if (errors.length > 0) {
+        alert("Validation errors:\n" + errors.join("\n"));
+        return;
+      }
+
+      // Parse angle from format dd*mm'ss" to decimal degrees using existing validation function
+      let angleDecimal = null;
+      try {
+        // Use the existing dmsToDecimal function which validates minutes and seconds are 0-59
+        angleDecimal = dmsToDecimal(angleText);
+      } catch (e) {
+        alert(`Invalid angle format: ${e.message}\nAngle must be in format dd*mm'ss\" where minutes and seconds are 0-59 (e.g., 45*30'15\")`);
+        return;
+      }
+
+      // Get base point image coordinates
+      const basePointImg = geometryViewer.alignmentOverlay.basePoint;
+      const referenceLine = geometryViewer.alignmentOverlay.referenceLine;
+
+      // Build request object (matching user's specification)
+      const requestData = {
+        base_point: {
+          image_coords: [basePointImg.x, basePointImg.y],
+          world_coords: [basePointX, basePointY]
+        },
+        reference_line: {
+          image_coords: {
+            start_pt: referenceLine.start_pt,
+            end_pt: referenceLine.end_pt
+          },
+          user_reference: {
+            bearind: bearing, // Note: using "bearind" as specified by user
+            angle: angleDecimal,
+            distance: distance
+          }
+        }
+      };
+
+      // Log the request data (you can modify this to send to API)
+      console.log("Alignment request data:", JSON.stringify(requestData, null, 2));
+      
+      // TODO: Send request to API endpoint
+      // Example:
+      // fetch('/api/alignment/apply', {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify(requestData)
+      // }).then(...)
+
+      alert("Alignment data prepared successfully!\nCheck console for request data.");
+    });
+  }
+}
+
+function setupSubboxToggles() {
+  const alignmentBlock = document.getElementById("tool-alignment-block");
+  if (!alignmentBlock) {
+    return;
+  }
+
+  const subboxes = Array.from(alignmentBlock.querySelectorAll(".tool-subbox"));
+  if (subboxes.length === 0) {
+    return;
+  }
+
+  const shouldIgnoreClick = (target) =>
+    Boolean(
+      target.closest(
+        ".tool-subbox-toggle, .tool-subbox-content button, .tool-subbox-content a, .tool-subbox-content input, .tool-subbox-content select, .tool-subbox-content textarea, .tool-subbox-content label, [data-prevent-toggle='true']"
+      )
+    );
+
+  const updateSubboxState = (subbox, shouldExpand) => {
+    subbox.classList.toggle("collapsed", !shouldExpand);
+    const toggle = subbox.querySelector(".tool-subbox-toggle");
+    if (toggle) {
+      toggle.setAttribute("aria-expanded", String(shouldExpand));
+      const { collapsedTitle, expandedTitle } = toggle.dataset;
+      if (shouldExpand && expandedTitle) {
+        toggle.setAttribute("title", expandedTitle);
+      } else if (!shouldExpand && collapsedTitle) {
+        toggle.setAttribute("title", collapsedTitle);
+      }
+    }
+  };
+
+  const collapseOtherSubboxes = (currentSubbox) => {
+    subboxes.forEach((subbox) => {
+      if (subbox !== currentSubbox && !subbox.classList.contains("collapsed")) {
+        updateSubboxState(subbox, false);
+      }
+    });
+  };
+
+  const toggleSubboxState = (subbox) => {
+    const willExpand = subbox.classList.contains("collapsed");
+    if (willExpand) {
+      collapseOtherSubboxes(subbox);
+    }
+    updateSubboxState(subbox, willExpand);
+  };
+
+  subboxes.forEach((subbox) => {
+    const toggle = subbox.querySelector(".tool-subbox-toggle");
+    const header = subbox.querySelector(".tool-subbox-header");
+    if (!toggle || !header) {
+      return;
+    }
+
+    const headerText = subbox.querySelector("h4")?.textContent || "";
+    const sectionLabel = headerText.replace(/\s+/g, " ").trim() || "subbox";
+    const collapsedTitle = `Expand ${sectionLabel}`;
+    const expandedTitle = `Collapse ${sectionLabel}`;
+
+    toggle.dataset.collapsedTitle = collapsedTitle;
+    toggle.dataset.expandedTitle = expandedTitle;
+
+    toggle.setAttribute("aria-label", `Toggle ${sectionLabel}`);
+
+    const isInitiallyCollapsed = subbox.classList.contains("collapsed");
+    toggle.setAttribute("aria-expanded", String(!isInitiallyCollapsed));
+    toggle.setAttribute("title", isInitiallyCollapsed ? collapsedTitle : expandedTitle);
+
+    toggle.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleSubboxState(subbox);
+    });
+
+    header.addEventListener("click", (event) => {
+      if (shouldIgnoreClick(event.target)) {
+        return;
+      }
+      event.stopPropagation();
+      toggleSubboxState(subbox);
+    });
+  });
+}
+
 function initializeDrafterPage() {
   console.log("initializeDrafterPage called");
   console.log("setupDrawingControls function available:", typeof setupDrawingControls);
@@ -1988,6 +2551,7 @@ function initializeDrafterPage() {
   setupAlignmentControls();
   setupExportControls();
   setupToolBlockToggles();
+  setupSubboxToggles();
   
   // Setup drawing controls after a short delay to ensure DOM is ready
   console.log("Setting up drawing controls...");

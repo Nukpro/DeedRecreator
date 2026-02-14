@@ -236,6 +236,227 @@ def add_segment(session_id: int):
         return jsonify({"success": False, "message": f"Internal server error: {str(e)}"}), 500
 
 
+# ---------------------------------------------------------------------------
+# Arc creation endpoints (from vectors.py ArcSegment.create_from_*)
+# ---------------------------------------------------------------------------
+
+@geometry_bp.post("/api/geometry/<int:session_id>/arc/from-three-points")
+def add_arc_from_three_points(session_id: int):
+    """Create an arc from three points (pt1, pt2 on arc, pt3)."""
+    try:
+        from backend.domain.vectors import ArcSegment, Site
+        data = request.json or {}
+        pt1 = data.get("pt1")
+        pt2 = data.get("pt2")
+        pt3 = data.get("pt3")
+        attributes = data.get("attributes")
+        if not pt1 or not pt2 or not pt3:
+            return jsonify({"success": False, "message": "pt1, pt2, and pt3 are required"}), 400
+        try:
+            arc = ArcSegment.create_from_three_points(
+                pt1={"x": float(pt1.get("x", 0)), "y": float(pt1.get("y", 0))},
+                pt2={"x": float(pt2.get("x", 0)), "y": float(pt2.get("y", 0))},
+                pt3={"x": float(pt3.get("x", 0)), "y": float(pt3.get("y", 0))},
+                attributes=attributes or {}
+            )
+        except ValueError as e:
+            return jsonify({"success": False, "message": str(e)}), 400
+        geometry_service = get_geometry_service()
+        site = geometry_service.add_arc(session_id, arc, attributes)
+        segments = site.get_all_segments()
+        last_segment = segments[-1].to_frontend_json() if segments else None
+        return jsonify({
+            "success": True,
+            "version": site.version,
+            "arc": last_segment
+        }), 200
+    except SessionNotFoundError as e:
+        return jsonify({"success": False, "message": str(e)}), 404
+    except GeometryError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error adding arc from three points: {e}", exc_info=True)
+        return jsonify({"success": False, "message": f"Internal server error: {str(e)}"}), 500
+
+
+@geometry_bp.post("/api/geometry/<int:session_id>/arc/from-tangent")
+def add_arc_from_tangent(session_id: int):
+    """Create an arc from start point, tangent direction (azimuth), radius, and length or angle."""
+    try:
+        from backend.domain.vectors import ArcSegment, Site
+        data = request.json or {}
+        start_point = data.get("startPoint")
+        tangent_direction = data.get("tangentDirection")
+        radius = data.get("radius")
+        length = data.get("length")
+        angle = data.get("angle")
+        rotation = data.get("rotation", "cw")
+        attributes = data.get("attributes")
+        if not start_point:
+            return jsonify({"success": False, "message": "startPoint is required"}), 400
+        if tangent_direction is None:
+            return jsonify({"success": False, "message": "tangentDirection is required"}), 400
+        if radius is None:
+            return jsonify({"success": False, "message": "radius is required"}), 400
+        if (length is None) == (angle is None):
+            return jsonify({"success": False, "message": "Exactly one of length or angle must be provided"}), 400
+        try:
+            sp = {"x": float(start_point.get("x", 0)), "y": float(start_point.get("y", 0))}
+            td = float(tangent_direction)
+            r = float(radius)
+            length_val = float(length) if length is not None else None
+            angle_val = float(angle) if angle is not None else None
+            arc = ArcSegment.create_from_tangent(
+                start_point=sp,
+                tangent_direction=td,
+                radius=r,
+                length=length_val,
+                angle=angle_val,
+                rotation=rotation,
+                attributes=attributes or {}
+            )
+        except ValueError as e:
+            return jsonify({"success": False, "message": str(e)}), 400
+        geometry_service = get_geometry_service()
+        site = geometry_service.add_arc(session_id, arc, attributes)
+        segments = site.get_all_segments()
+        last_segment = segments[-1].to_frontend_json() if segments else None
+        return jsonify({
+            "success": True,
+            "version": site.version,
+            "arc": last_segment
+        }), 200
+    except SessionNotFoundError as e:
+        return jsonify({"success": False, "message": str(e)}), 404
+    except GeometryError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error adding arc from tangent: {e}", exc_info=True)
+        return jsonify({"success": False, "message": f"Internal server error: {str(e)}"}), 500
+
+
+@geometry_bp.post("/api/geometry/<int:session_id>/arc/from-bearing-to-center")
+def add_arc_from_bearing_to_center(session_id: int):
+    """Create an arc from start point, quadrant, bearing to center, radius, and length or angle."""
+    try:
+        from backend.domain.vectors import ArcSegment, Site
+        data = request.json or {}
+        start_point = data.get("startPoint")
+        quadrant = data.get("quadrant")
+        bearing = data.get("bearing")
+        radius = data.get("radius")
+        length = data.get("length")
+        angle = data.get("angle")
+        rotation = data.get("rotation", "cw")
+        attributes = data.get("attributes")
+        if not start_point:
+            return jsonify({"success": False, "message": "startPoint is required"}), 400
+        if not quadrant:
+            return jsonify({"success": False, "message": "quadrant is required"}), 400
+        if bearing is None:
+            return jsonify({"success": False, "message": "bearing is required"}), 400
+        if radius is None:
+            return jsonify({"success": False, "message": "radius is required"}), 400
+        if (length is None) == (angle is None):
+            return jsonify({"success": False, "message": "Exactly one of length or angle must be provided"}), 400
+        try:
+            sp = {"x": float(start_point.get("x", 0)), "y": float(start_point.get("y", 0))}
+            q = str(quadrant).upper()
+            b = float(bearing)
+            r = float(radius)
+            length_val = float(length) if length is not None else None
+            angle_val = float(angle) if angle is not None else None
+            arc = ArcSegment.create_from_bearing_to_center(
+                start_point=sp,
+                quadrant=q,
+                bearing=b,
+                radius=r,
+                length=length_val,
+                angle=angle_val,
+                rotation=rotation,
+                attributes=attributes or {}
+            )
+        except ValueError as e:
+            return jsonify({"success": False, "message": str(e)}), 400
+        geometry_service = get_geometry_service()
+        site = geometry_service.add_arc(session_id, arc, attributes)
+        segments = site.get_all_segments()
+        last_segment = segments[-1].to_frontend_json() if segments else None
+        return jsonify({
+            "success": True,
+            "version": site.version,
+            "arc": last_segment
+        }), 200
+    except SessionNotFoundError as e:
+        return jsonify({"success": False, "message": str(e)}), 404
+    except GeometryError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error adding arc from bearing to center: {e}", exc_info=True)
+        return jsonify({"success": False, "message": f"Internal server error: {str(e)}"}), 500
+
+
+@geometry_bp.put("/api/geometry/<int:session_id>/arc/<arc_id>/recalculate")
+def recalculate_arc(session_id: int, arc_id: str):
+    """Recalculate an arc segment using bearing-to-center parameters."""
+    try:
+        from backend.domain.vectors import ArcSegment, Site
+        data = request.json or {}
+        start_point = data.get("startPoint")
+        quadrant = data.get("quadrant")
+        bearing = data.get("bearing")
+        radius = data.get("radius")
+        length = data.get("length")
+        angle = data.get("angle")
+        rotation = data.get("rotation", "cw")
+        if not start_point:
+            return jsonify({"success": False, "message": "startPoint is required"}), 400
+        if not quadrant:
+            return jsonify({"success": False, "message": "quadrant is required"}), 400
+        if bearing is None:
+            return jsonify({"success": False, "message": "bearing is required"}), 400
+        if radius is None:
+            return jsonify({"success": False, "message": "radius is required"}), 400
+        if (length is None) == (angle is None):
+            return jsonify({"success": False, "message": "Exactly one of length or angle must be provided"}), 400
+        try:
+            sp = {"x": float(start_point.get("x", 0)), "y": float(start_point.get("y", 0))}
+            q = str(quadrant).upper()
+            b = float(bearing)
+            r = float(radius)
+            length_val = float(length) if length is not None else None
+            angle_val = float(angle) if angle is not None else None
+        except (ValueError, TypeError) as e:
+            return jsonify({"success": False, "message": f"Invalid numbers: {e}"}), 400
+        geometry_service = get_geometry_service()
+        site = geometry_service.recalculate_arc(
+            session_id,
+            arc_id,
+            start_point=sp,
+            quadrant=q,
+            bearing=b,
+            radius=r,
+            length=length_val,
+            angle=angle_val,
+            rotation=rotation
+        )
+        return jsonify({
+            "success": True,
+            "version": site.version
+        }), 200
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except SessionNotFoundError as e:
+        return jsonify({"success": False, "message": str(e)}), 404
+    except GeometryNotFoundError as e:
+        return jsonify({"success": False, "message": str(e)}), 404
+    except GeometryError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error recalculating arc: {e}", exc_info=True)
+        return jsonify({"success": False, "message": f"Internal server error: {str(e)}"}), 500
+
+
 @geometry_bp.put("/api/geometry/<int:session_id>/segment/<segment_id>")
 def update_segment(session_id: int, segment_id: str):
     """Update a segment in the geometry."""

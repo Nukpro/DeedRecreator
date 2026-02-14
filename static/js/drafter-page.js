@@ -582,7 +582,7 @@
         initializeGeometryViewer();
         setupGeometryControls();
         setupUploadControls();
-        setupAlignmentControls();
+        // setupAlignmentControls(); // Commented out - alignment controls HTML removed from template
         setupExportControls();
         setupToolBlockToggles();
     });

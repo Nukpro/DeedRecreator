@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Final, Optional, Tuple
 
@@ -10,7 +11,11 @@ from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
 from backend.domain.documents import StoredDocument
-from backend.services.image_utils import encode_png
+from backend.services.image_utils import (
+    default_boundary_box,
+    encode_png,
+    save_alignment_json,
+)
 from backend.services.pdf_converter import (
     PDFConversionError,
     PNG_EXPORT_DPI,
@@ -150,7 +155,49 @@ class DocumentService:
             )
 
         if boundary_box is None and image_width is not None and image_height is not None:
-            boundary_box = self._default_boundary_box(image_width, image_height)
+            boundary_box = default_boundary_box(image_width, image_height)
+
+        # Create alignment.json file after saving processed image
+        if image_width is not None and image_height is not None and boundary_box:
+            # Get image filename without extension
+            image_name = target_path.stem  # Gets filename without .png extension
+            alignment_path = processed_dir / f"{image_name}.alignment.json"
+
+            # Create initial alignment.json structure
+            alignment_data = {
+                "version": "1.0",
+                "image_filename": target_filename,
+                "image_size": {
+                    "width": float(image_width),
+                    "height": float(image_height),
+                },
+                "scale_factor": 1.0,
+                "boundary_box": boundary_box,
+                "rotation": {
+                    "angle": 0.0,
+                    "center": {
+                        "x": (boundary_box["minX"] + boundary_box["maxX"]) / 2,
+                        "y": (boundary_box["minY"] + boundary_box["maxY"]) / 2,
+                    },
+                },
+                "base_point": None,
+                "reference_line": None,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+            }
+
+            try:
+                save_alignment_json(alignment_data, alignment_path)
+            except Exception as e:
+                # Log error but don't fail the upload
+                try:
+                    from flask import current_app
+
+                    current_app.logger.warning(
+                        f"Failed to create alignment.json: {e}"
+                    )
+                except Exception:
+                    pass  # If not in Flask context, skip logging
 
         # Calculate relative paths
         # Return paths relative to session directory
@@ -233,12 +280,4 @@ class DocumentService:
             "maxY": float(top),
         }
 
-    @staticmethod
-    def _default_boundary_box(width: int, height: int) -> Dict[str, float]:
-        return {
-            "minX": 0.0,
-            "minY": 0.0,
-            "maxX": float(width),
-            "maxY": float(height),
-        }
 

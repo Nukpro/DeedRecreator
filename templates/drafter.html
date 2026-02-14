@@ -27,7 +27,7 @@
         </section>
         <aside class="tools-pane">
             <h2>Tools Panel</h2>
-            <section class="tool-block" id="tool-upload-block">
+            <section class="tool-block collapsed" id="tool-upload-block">
                 <div class="tool-block-header">
                     <h3>Document Upload
                         <span class="info-icon" tabindex="0" aria-label="Document Upload details">
@@ -38,9 +38,9 @@
                     <button
                         class="tool-block-toggle"
                         type="button"
-                        aria-expanded="true"
+                        aria-expanded="false"
                         aria-controls="tool-upload-block-content"
-                        title="Collapse Document Upload section">
+                        title="Expand Document Upload section">
                         <span class="visually-hidden">Toggle Document Upload section</span>
                     </button>
                 </div>
@@ -67,49 +67,105 @@
                     <button
                         class="tool-block-toggle"
                         type="button"
-                        aria-expanded="true"
+                        aria-expanded="false"
                         aria-controls="tool-alignment-block-content"
-                        title="Collapse Image Alignment section">
+                        title="Expand Image Alignment section">
                         <span class="visually-hidden">Toggle Image Alignment section</span>
                     </button>
                 </div>
-                <div class="tool-block-content" id="tool-alignment-block-content">
-                    <div class="form-group">
-                        <label>Base Point Coordinates</label>
-                        <div class="input-row">
-                            <input type="number" id="base-point-x" class="number-input" value="10000" step="0.01">
-                            <input type="number" id="base-point-y" class="number-input" value="20000" step="0.01">
+<div class="tool-block-content" id="tool-alignment-block-content">
+                    <div class="tool-subbox collapsed" id="subbox-point-reference">
+                        <div class="tool-subbox-header">
+                            <h4>By point and reference line</h4>
+                            <button
+                                class="tool-subbox-toggle"
+                                type="button"
+                                aria-expanded="false"
+                                aria-controls="subbox-point-reference-content"
+                                title="Expand By point and reference line">
+                                <span class="visually-hidden">Toggle By point and reference line</span>
+                            </button>
                         </div>
-                        <button class="btn" type="button" id="apply-base-point">Apply Base Point</button>
-                        <div class="helper-text hidden" id="base-point-status"></div>
+                        <div class="tool-subbox-content" id="subbox-point-reference-content">
+                            <div class="form-group">
+                                <button class="btn" type="button" id="select-base-point">Select base point</button>
+                            </div>
+                            <div class="form-group">
+                                <label>Coordinates:</label>
+                                <div class="input-row">
+                                    <input type="number" id="base-point-x" class="number-input" placeholder="X">
+                                    <input type="number" id="base-point-y" class="number-input" placeholder="Y">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <button class="btn" type="button" id="draw-reference-line">Draw reference line</button>
+                            </div>
+                            <div class="form-group">
+                                <label>Bearing:</label>
+                                <select id="reference-bearing" class="select-input">
+                                    <option value="">Select bearing</option>
+                                    <option value="NW">NW</option>
+                                    <option value="NE">NE</option>
+                                    <option value="SW">SW</option>
+                                    <option value="SE">SE</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Angle:</label>
+                                <input type="text" id="reference-angle" class="text-input" placeholder="dd*mm'ss&quot;">
+                            </div>
+                            <div class="form-group">
+                                <label>Distance:</label>
+                                <input type="number" id="reference-distance" class="number-input" placeholder="Distance">
+                            </div>
+                            <div class="form-group">
+                                <button class="btn" type="button" id="apply-point-reference">Apply</button>
+                            </div>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label>Reference Line</label>
-                        <div class="tools-actions">
-                            <button class="btn btn-outline" type="button" id="toggle-reference-line">Activate Reference Line</button>
-                            <button class="btn btn-secondary" type="button" id="undo-action">Undo Last Action</button>
+                    
+                    <div class="tool-subbox collapsed" id="subbox-3-points">
+                        <div class="tool-subbox-header">
+                            <h4>By 3 points</h4>
+                            <button
+                                class="tool-subbox-toggle"
+                                type="button"
+                                aria-expanded="false"
+                                aria-controls="subbox-3-points-content"
+                                title="Expand By 3 points">
+                                <span class="visually-hidden">Toggle By 3 points</span>
+                            </button>
+                        </div>
+                        <div class="tool-subbox-content" id="subbox-3-points-content">
+                            <div class="form-group">
+                                <div class="form-row">
+                                    <button class="btn" type="button" id="select-point-1">Select point</button>
+                                    <div class="input-row">
+                                        <input type="number" id="point-1-x" class="number-input" placeholder="X">
+                                        <input type="number" id="point-1-y" class="number-input" placeholder="Y">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <div class="form-row">
+                                    <button class="btn" type="button" id="select-point-2">Select point</button>
+                                    <div class="input-row">
+                                        <input type="number" id="point-2-x" class="number-input" placeholder="X">
+                                        <input type="number" id="point-2-y" class="number-input" placeholder="Y">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <div class="form-row">
+                                    <button class="btn" type="button" id="select-point-3">Select point</button>
+                                    <div class="input-row">
+                                        <input type="number" id="point-3-x" class="number-input" placeholder="X">
+                                        <input type="number" id="point-3-y" class="number-input" placeholder="Y">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div class="reference-line-inputs" id="reference-line-inputs">
-                        <div class="form-group">
-                            <label for="line-distance">Distance (ft)</label>
-                            <input type="number" id="line-distance" class="number-input" min="0" step="0.01" placeholder="Enter distance in feet">
-                        </div>
-                        <div class="form-group">
-                            <label for="line-quadrant">Quadrant</label>
-                            <select id="line-quadrant" class="select-input">
-                                <option value="NW">NW</option>
-                                <option value="NE">NE</option>
-                                <option value="SW">SW</option>
-                                <option value="SE">SE</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="line-bearing">Bearing</label>
-                            <input type="text" id="line-bearing" class="text-input" placeholder='Format example: 15°25&apos;25&quot;'>
-                        </div>
-                    </div>
-                    <div class="helper-text hidden" id="reference-line-status"></div>
                 </div>
             </section>
 
