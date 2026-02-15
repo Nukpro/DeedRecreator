@@ -4,7 +4,7 @@ Domain models package.
 This package contains domain models for the application.
 """
 
-from backend.domain.vectors import (
+from backend.geometry.vectors import (
     GeometryObject,
     Point,
     Segment,
@@ -13,7 +13,7 @@ from backend.domain.vectors import (
     Geometry,
     Parcel,
     GeometryLayer,
-    Site
+    Site,
 )
 
 __all__ = [

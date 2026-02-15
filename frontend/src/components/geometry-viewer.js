@@ -1547,6 +1547,7 @@ export default class GeometryViewer {
     const currentY = event.clientY - rect.top;
     let worldPoint = this.canvasToWorld(currentX, currentY);
 
+    const prevSnappedTarget = this.snappedTarget;
     // Task 5.1.5: Apply snapping when snapEnabled is true
     if (this.options.snapEnabled && 
         (this.drawingMode === "points" || 
@@ -1568,6 +1569,7 @@ export default class GeometryViewer {
     } else {
       this.snappedTarget = null;
     }
+    const snappedTargetChanged = this.snappedTarget !== prevSnappedTarget;
 
     this.updateCoordDisplay(currentX, currentY);
 
@@ -1587,6 +1589,10 @@ export default class GeometryViewer {
       // Only re-render if hover state changed
       if (this.objectsEqual(this.hoveredObject, newHoveredObject) === false) {
         this.hoveredObject = newHoveredObject;
+        this.render();
+      }
+      // Re-render when snap target (magnet highlight) changes so point highlights without zoom
+      if (snappedTargetChanged) {
         this.render();
       }
       

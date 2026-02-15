@@ -36,7 +36,8 @@ def _register_blueprints(app: Flask) -> None:
     from backend.api.pages.routes import pages_bp
     from backend.api.uploads.routes import uploads_bp
     from backend.api.sessions.routes import sessions_bp
-    from backend.api.geometry import geometry_bp
+    from backend.geometry import geometry_bp
+    import backend.geometry.routes  # noqa: F401 - register routes on geometry_bp
     from backend.api.alignment import alignment_bp
 
     app.register_blueprint(pages_bp)

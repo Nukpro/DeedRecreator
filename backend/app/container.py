@@ -4,7 +4,7 @@ from flask import current_app
 
 from backend.services import DocumentService
 from backend.services.session_service import SessionService
-from backend.services.geometry_service import GeometryService
+from backend.geometry import GeometryService
 
 DOCUMENT_SERVICE_KEY = "document_service"
 SESSION_SERVICE_KEY = "session_service"
