@@ -4,106 +4,110 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request, send_from_directory, url_for
 
-from backend.app.container import get_document_service, get_session_service
-from backend.services.document_service import DocumentStorageError, UnsupportedDocumentError
-from backend.services.session_service import SessionNotFoundError
+from backend.app.container import get_document_service, get_site_session_service
+from backend.services.document_service import (
+    DocumentStorageError,
+    UnsupportedDocumentError,
+)
+from backend.services.site_session_service import SiteSessionNotFoundError
 
 uploads_bp = Blueprint("uploads", __name__)
 
 
 @uploads_bp.post("/api/upload-document")
 def upload_document():
-    """Upload document to a session directory. Session ID is required."""
+    """Upload document to a site session directory. Site session ID is required."""
     file = request.files.get("document")
-    # Try to get session_id from multiple sources: URL params, FormData, or JSON body
-    session_id = None
-    
-    # Try URL parameters first
-    session_id = request.args.get("session_id", type=int)
-    
-    # Try FormData if not found in URL
-    if not session_id and request.form:
-        session_id = request.form.get("session_id", type=int)
-    
-    # Try JSON body if still not found
-    if not session_id and request.is_json:
-        json_session_id = request.json.get("session_id")
-        if json_session_id is not None:
+    site_session_id = None
+
+    site_session_id = request.args.get("site_session_id", type=int)
+
+    if not site_session_id and request.form:
+        site_session_id = request.form.get("site_session_id", type=int)
+
+    if not site_session_id and request.is_json:
+        json_site_session_id = request.json.get("site_session_id")
+        if json_site_session_id is not None:
             try:
-                session_id = int(json_session_id)
+                site_session_id = int(json_site_session_id)
             except (ValueError, TypeError):
                 pass
 
-    # Session ID is now required
-    if not session_id:
-        return jsonify({"message": "session_id is required"}), 400
+    if not site_session_id:
+        return jsonify({"message": "site_session_id is required"}), 400
 
     document_service = get_document_service()
-    
+
     try:
-        session_service = get_session_service()
-        session = session_service.get_session(session_id)
-        
-        # Get session directory paths - use the same method as SessionService
-        # SessionService uses: instance_path / "sessions_id_" / catalog_name
-        # Ensure we use the same instance_path resolution as SessionService
+        site_session_service = get_site_session_service()
+        site_session = site_session_service.get_site_session(site_session_id)
+
         instance_path = Path(current_app.instance_path).resolve()
-        catalog_name = session["storage_catalog_name"]
-        sessions_dir = instance_path / "sessions_id_"
-        session_dir = sessions_dir / catalog_name
-        
-        # Debug: verify instance_path is correct
-        current_app.logger.debug(f"Instance path: {instance_path}, exists: {instance_path.exists()}")
-        current_app.logger.debug(f"Session dir: {session_dir}")
-        
-        session_upload_dir = session_dir / "uploads"
-        session_processed_dir = session_dir / "processed_drawing"
-        
-        # Ensure directories exist
-        session_upload_dir.mkdir(parents=True, exist_ok=True)
-        session_processed_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Verify paths are correct (debug)
+        catalog_name = site_session["storage_catalog_name"]
+        site_sessions_dir = instance_path / "site_sessions_id_"
+        site_session_dir = site_sessions_dir / catalog_name
+
         current_app.logger.debug(
-            f"Session upload dir: {session_upload_dir}, exists: {session_upload_dir.exists()}"
+            f"Instance path: {instance_path}, exists: {instance_path.exists()}"
+        )
+        current_app.logger.debug(f"Site session dir: {site_session_dir}")
+
+        site_session_upload_dir = site_session_dir / "uploads"
+        site_session_processed_dir = site_session_dir / "processed_drawing"
+
+        site_session_upload_dir.mkdir(parents=True, exist_ok=True)
+        site_session_processed_dir.mkdir(parents=True, exist_ok=True)
+
+        current_app.logger.debug(
+            f"Site session upload dir: {site_session_upload_dir}, exists: {site_session_upload_dir.exists()}"
         )
         current_app.logger.debug(
-            f"Session processed dir: {session_processed_dir}, exists: {session_processed_dir.exists()}"
+            f"Site session processed dir: {site_session_processed_dir}, exists: {site_session_processed_dir.exists()}"
         )
-        
-    except SessionNotFoundError:
-        return jsonify({"message": f"Session {session_id} not found"}), 404
+
+    except SiteSessionNotFoundError:
+        return (
+            jsonify(
+                {"message": f"Site session {site_session_id} not found"}
+            ),
+            404,
+        )
     except Exception as e:
-        current_app.logger.error(f"Error getting session directories: {e}", exc_info=True)
+        current_app.logger.error(
+            f"Error getting site session directories: {e}", exc_info=True
+        )
         return jsonify({"message": "Internal server error"}), 500
 
     current_app.logger.info(
-        f"Uploading document for session {session_id} to {session_upload_dir}"
+        f"Uploading document for site session {site_session_id} to {site_session_upload_dir}"
     )
 
     try:
         stored_document = document_service.save_document(
             file,
-            session_upload_dir=session_upload_dir,
-            session_processed_dir=session_processed_dir,
+            site_session_upload_dir=site_session_upload_dir,
+            site_session_processed_dir=site_session_processed_dir,
         )
     except UnsupportedDocumentError as exc:
         return jsonify({"message": str(exc)}), 400
     except DocumentStorageError as exc:
         return jsonify({"message": str(exc)}), 500
 
-    # Update session with processed_drawing path
     if stored_document.stored_relative_path:
         try:
-            session_service.update_session(
-                session_id=session_id,
+            site_session_service.update_site_session(
+                site_session_id=site_session_id,
                 processed_drawing=stored_document.stored_relative_path,
             )
-        except SessionNotFoundError:
-            # Session was deleted, continue anyway
-            current_app.logger.warning(f"Session {session_id} was deleted after upload")
+        except SiteSessionNotFoundError:
+            current_app.logger.warning(
+                f"Site session {site_session_id} was deleted after upload"
+            )
         except Exception as e:
-            current_app.logger.error(f"Error updating session {session_id}: {e}", exc_info=True)
+            current_app.logger.error(
+                f"Error updating site session {site_session_id}: {e}",
+                exc_info=True,
+            )
 
     return (
         jsonify(
@@ -118,12 +122,12 @@ def upload_document():
                     "wasConverted": stored_document.was_converted,
                     "imageUrl": url_for(
                         "uploads.serve_uploaded_file",
-                        session_id=session_id,
+                        site_session_id=site_session_id,
                         filename=stored_document.stored_filename,
                     ),
                     "originalUrl": url_for(
                         "uploads.serve_uploaded_file",
-                        session_id=session_id,
+                        site_session_id=site_session_id,
                         filename=stored_document.original_stored_filename,
                     ),
                     "warnings": stored_document.warnings,
@@ -137,34 +141,49 @@ def upload_document():
     )
 
 
-@uploads_bp.get("/uploads/<int:session_id>/<path:filename>")
-def serve_uploaded_file(session_id: int, filename: str):
-    """Serve uploaded file from session directory."""
+@uploads_bp.get("/uploads/<int:site_session_id>/<path:filename>")
+def serve_uploaded_file(site_session_id: int, filename: str):
+    """Serve uploaded file from site session directory."""
     try:
-        session_service = get_session_service()
-        session = session_service.get_session(session_id)
-        
-        # Get session directory path
-        instance_path = Path(current_app.instance_path).resolve()
-        catalog_name = session["storage_catalog_name"]
-        sessions_dir = instance_path / "sessions_id_"
-        session_dir = sessions_dir / catalog_name
-        
-        # Try to find file in uploads or processed_drawing directories
-        uploads_dir = session_dir / "uploads"
-        processed_dir = session_dir / "processed_drawing"
-        
-        # Check in uploads first, then processed_drawing
-        if (uploads_dir / filename).exists():
-            return send_from_directory(uploads_dir, filename, as_attachment=False)
-        elif (processed_dir / filename).exists():
-            return send_from_directory(processed_dir, filename, as_attachment=False)
-        else:
-            return jsonify({"message": f"File {filename} not found in session {session_id}"}), 404
-            
-    except SessionNotFoundError:
-        return jsonify({"message": f"Session {session_id} not found"}), 404
-    except Exception as e:
-        current_app.logger.error(f"Error serving file {filename} for session {session_id}: {e}", exc_info=True)
-        return jsonify({"message": "Internal server error"}), 500
+        site_session_service = get_site_session_service()
+        site_session = site_session_service.get_site_session(site_session_id)
 
+        instance_path = Path(current_app.instance_path).resolve()
+        catalog_name = site_session["storage_catalog_name"]
+        site_sessions_dir = instance_path / "site_sessions_id_"
+        site_session_dir = site_sessions_dir / catalog_name
+
+        uploads_dir = site_session_dir / "uploads"
+        processed_dir = site_session_dir / "processed_drawing"
+
+        if (uploads_dir / filename).exists():
+            return send_from_directory(
+                uploads_dir, filename, as_attachment=False
+            )
+        elif (processed_dir / filename).exists():
+            return send_from_directory(
+                processed_dir, filename, as_attachment=False
+            )
+        else:
+            return (
+                jsonify(
+                    {
+                        "message": f"File {filename} not found in site session {site_session_id}"
+                    }
+                ),
+                404,
+            )
+
+    except SiteSessionNotFoundError:
+        return (
+            jsonify(
+                {"message": f"Site session {site_session_id} not found"}
+            ),
+            404,
+        )
+    except Exception as e:
+        current_app.logger.error(
+            f"Error serving file {filename} for site session {site_session_id}: {e}",
+            exc_info=True,
+        )
+        return jsonify({"message": "Internal server error"}), 500

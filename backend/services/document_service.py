@@ -57,17 +57,17 @@ class DocumentService:
         return cls(storage=storage, upload_root=upload_dir)
 
     def save_document(
-        self, 
-        file_storage: FileStorage, 
-        session_upload_dir: Optional[Path] = None,
-        session_processed_dir: Optional[Path] = None,
+        self,
+        file_storage: FileStorage,
+        site_session_upload_dir: Optional[Path] = None,
+        site_session_processed_dir: Optional[Path] = None,
     ) -> StoredDocument:
         """
         Save document to storage.
-        
-        If session directories are provided, files are saved to session directories:
-        - Original file goes to session_upload_dir
-        - Processed PNG goes to session_processed_dir
+
+        If site session directories are provided, files are saved there:
+        - Original file goes to site_session_upload_dir
+        - Processed PNG goes to site_session_processed_dir
         Otherwise, files are saved to default upload_root.
         """
         if not file_storage or not file_storage.filename:
@@ -81,14 +81,14 @@ class DocumentService:
 
         base_name = uuid.uuid4().hex
         original_stored_filename = f"{base_name}.{extension}"
-        
-        # Determine upload and processed directories
-        # Session directories are now required
-        if not session_upload_dir or not session_processed_dir:
-            raise DocumentStorageError("Session directories are required. session_id must be provided.")
-        
-        upload_dir = session_upload_dir
-        processed_dir = session_processed_dir
+
+        if not site_session_upload_dir or not site_session_processed_dir:
+            raise DocumentStorageError(
+                "Site session directories are required. site_session_id must be provided."
+            )
+
+        upload_dir = site_session_upload_dir
+        processed_dir = site_session_processed_dir
         # Ensure directories are absolute paths
         upload_dir = upload_dir.resolve()
         processed_dir = processed_dir.resolve()
@@ -199,11 +199,10 @@ class DocumentService:
                 except Exception:
                     pass  # If not in Flask context, skip logging
 
-        # Calculate relative paths
-        # Return paths relative to session directory
-        session_root = session_upload_dir.parent  # Go up from uploads/ to session directory
-        original_relative = original_path.relative_to(session_root).as_posix()
-        stored_relative = target_path.relative_to(session_root).as_posix()
+        # Calculate relative paths (relative to site session directory)
+        site_session_root = site_session_upload_dir.parent
+        original_relative = original_path.relative_to(site_session_root).as_posix()
+        stored_relative = target_path.relative_to(site_session_root).as_posix()
 
         return StoredDocument(
             original_filename=original_filename,

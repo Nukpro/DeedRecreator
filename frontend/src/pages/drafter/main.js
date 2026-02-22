@@ -1,5 +1,6 @@
 import GeometryViewer from "../../components/geometry-viewer.js";
 import PropertyEditor from "../../components/property-editor.js";
+import * as arcApi from "../../utils/arc-api.js";
 import "../../styles/geometry-viewer.css";
 import "../../styles/property-editor.css";
 import "./style.css";
@@ -319,18 +320,18 @@ function initializeGeometryViewer() {
   geometryViewer.onPointUpdate = async (pointId, newX, newY) => {
     console.log("Point update:", { pointId, newX, newY });
     
-    const getSessionId = () => {
-      if (window.sessionData && window.sessionData.id) {
-        return window.sessionData.id;
+    const getSiteSessionId = () => {
+      if (window.siteSessionData && window.siteSessionData.id) {
+        return window.siteSessionData.id;
       }
       const urlParams = new URLSearchParams(window.location.search);
-      const sessionId = urlParams.get("session_id");
-      return sessionId ? parseInt(sessionId, 10) : null;
+      const siteSessionId = urlParams.get("site_session_id");
+      return siteSessionId ? parseInt(siteSessionId, 10) : null;
     };
     
-    const sessionId = getSessionId();
-    if (!sessionId) {
-      console.error("No session ID available");
+    const siteSessionId = getSiteSessionId();
+    if (!siteSessionId) {
+      console.error("No site session ID available");
       return;
     }
     
@@ -355,12 +356,12 @@ function initializeGeometryViewer() {
     
     try {
       console.log("Sending point update request:", {
-        url: `/api/geometry/${sessionId}/point/${pointId}`,
+        url: `/api/geometry/${siteSessionId}/point/${pointId}`,
         method: "PUT",
         data: updateData
       });
       
-      const response = await fetch(`/api/geometry/${sessionId}/point/${pointId}`, {
+      const response = await fetch(`/api/geometry/${siteSessionId}/point/${pointId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json"
@@ -378,7 +379,7 @@ function initializeGeometryViewer() {
         if (geometryViewer) {
           try {
             console.log("Reloading geometry from server...");
-            const reloadResponse = await fetch(`/api/geometry/${sessionId}`);
+            const reloadResponse = await fetch(`/api/geometry/${siteSessionId}`);
             if (reloadResponse.ok) {
               const data = await reloadResponse.json();
               geometryViewer.loadData(data, true);
@@ -417,18 +418,18 @@ function initializeGeometryViewer() {
   geometryViewer.onLinePointUpdate = async (segmentId, pointType, newX, newY) => {
     console.log("Line point update:", { segmentId, pointType, newX, newY });
     
-    const getSessionId = () => {
-      if (window.sessionData && window.sessionData.id) {
-        return window.sessionData.id;
+    const getSiteSessionId = () => {
+      if (window.siteSessionData && window.siteSessionData.id) {
+        return window.siteSessionData.id;
       }
       const urlParams = new URLSearchParams(window.location.search);
-      const sessionId = urlParams.get("session_id");
-      return sessionId ? parseInt(sessionId, 10) : null;
+      const siteSessionId = urlParams.get("site_session_id");
+      return siteSessionId ? parseInt(siteSessionId, 10) : null;
     };
     
-    const sessionId = getSessionId();
-    if (!sessionId) {
-      console.error("No session ID available");
+    const siteSessionId = getSiteSessionId();
+    if (!siteSessionId) {
+      console.error("No site session ID available");
       return;
     }
     
@@ -469,12 +470,12 @@ function initializeGeometryViewer() {
     
     try {
       console.log("Sending line point update request:", {
-        url: `/api/geometry/${sessionId}/segment/${segmentId}`,
+        url: `/api/geometry/${siteSessionId}/segment/${segmentId}`,
         method: "PUT",
         data: updateData
       });
       
-      const response = await fetch(`/api/geometry/${sessionId}/segment/${segmentId}`, {
+      const response = await fetch(`/api/geometry/${siteSessionId}/segment/${segmentId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json"
@@ -492,7 +493,7 @@ function initializeGeometryViewer() {
         if (geometryViewer) {
           try {
             console.log("Reloading geometry from server...");
-            const reloadResponse = await fetch(`/api/geometry/${sessionId}`);
+            const reloadResponse = await fetch(`/api/geometry/${siteSessionId}`);
             if (reloadResponse.ok) {
               const data = await reloadResponse.json();
               geometryViewer.loadData(data, true);
@@ -524,6 +525,62 @@ function initializeGeometryViewer() {
     } catch (error) {
       console.error("Error updating line point:", error);
       alert("An error occurred while updating the line point: " + error.message);
+    }
+  };
+
+  geometryViewer.onArcPointEditStart = () => {
+    if (propertyEditor) propertyEditor.hide();
+  };
+
+  geometryViewer.onArcPointUpdate = async (segmentId, pointType, newX, newY, originalSegment) => {
+    const getSiteSessionId = () => {
+      if (window.siteSessionData && window.siteSessionData.id) return window.siteSessionData.id;
+      const urlParams = new URLSearchParams(window.location.search);
+      const sid = urlParams.get("site_session_id");
+      return sid ? parseInt(sid, 10) : null;
+    };
+    const siteSessionId = getSiteSessionId();
+    if (!siteSessionId) { console.error("No site session ID"); return; }
+    if (!originalSegment || !originalSegment.center) { console.error("No original segment"); return; }
+    const cx = originalSegment.center.x, cy = originalSegment.center.y, r = originalSegment.radius;
+    const rot = originalSegment.rotation || originalSegment.rot || "cw";
+    const start = originalSegment.start || { x: originalSegment.startX, y: originalSegment.startY };
+    const end = originalSegment.end || { x: originalSegment.endX, y: originalSegment.endY };
+    const dx = start.x - cx, dy = start.y - cy;
+    const a1 = Math.atan2(dx, dy);
+    const deltaRad = (originalSegment.delta != null ? originalSegment.delta * Math.PI / 180 : 0);
+    const midAngle = rot === "ccw" ? a1 + deltaRad / 2 : a1 - deltaRad / 2;
+    const mid = { x: cx + r * Math.sin(midAngle), y: cy + r * Math.cos(midAngle) };
+    let pt1, pt2, pt3;
+    if (pointType === "center") {
+      try {
+        await arcApi.moveCenter(siteSessionId, segmentId, { x: newX, y: newY });
+        const reloadResponse = await fetch(`/api/geometry/${siteSessionId}`);
+        if (reloadResponse.ok) {
+          const data = await reloadResponse.json();
+          if (geometryViewer) { geometryViewer.loadData(data, true); geometryViewer.render(); }
+          if (propertyEditor) propertyEditor.hide();
+        }
+      } catch (e) {
+        console.error(e);
+        alert(e.message || "Error moving arc center");
+      }
+      return;
+    }
+    if (pointType === "start") { pt1 = { x: newX, y: newY }; pt2 = mid; pt3 = end; }
+    else if (pointType === "mid") { pt1 = start; pt2 = { x: newX, y: newY }; pt3 = end; }
+    else { pt1 = start; pt2 = mid; pt3 = { x: newX, y: newY }; }
+    try {
+      await arcApi.updateFromThreePoints(siteSessionId, segmentId, pt1, pt2, pt3, { rotation: rot });
+      const reloadResponse = await fetch(`/api/geometry/${siteSessionId}`);
+      if (reloadResponse.ok) {
+        const data = await reloadResponse.json();
+        if (geometryViewer) { geometryViewer.loadData(data, true); geometryViewer.render(); }
+        if (propertyEditor) propertyEditor.hide();
+      }
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "Error updating arc");
     }
   };
   
@@ -618,18 +675,18 @@ function initializeGeometryViewer() {
 
 // Handle object update
 async function handleObjectUpdate(values) {
-  const getSessionId = () => {
-    if (window.sessionData && window.sessionData.id) {
-      return window.sessionData.id;
+  const getSiteSessionId = () => {
+    if (window.siteSessionData && window.siteSessionData.id) {
+      return window.siteSessionData.id;
     }
     const urlParams = new URLSearchParams(window.location.search);
-    const sessionId = urlParams.get("session_id");
-    return sessionId ? parseInt(sessionId, 10) : null;
+    const siteSessionId = urlParams.get("site_session_id");
+    return siteSessionId ? parseInt(siteSessionId, 10) : null;
   };
 
-  const sessionId = getSessionId();
-  if (!sessionId) {
-    console.error("No session ID available");
+  const siteSessionId = getSiteSessionId();
+  if (!siteSessionId) {
+    console.error("No site session ID available");
     return;
   }
 
@@ -644,12 +701,12 @@ async function handleObjectUpdate(values) {
 
       console.log("handleObjectUpdate called with values:", values);
       console.log("Sending update request:", { 
-        url: `/api/geometry/${sessionId}/point/${values.id}`,
+        url: `/api/geometry/${siteSessionId}/point/${values.id}`,
         method: "PUT",
         data: updateData 
       });
 
-      const response = await fetch(`/api/geometry/${sessionId}/point/${values.id}`, {
+      const response = await fetch(`/api/geometry/${siteSessionId}/point/${values.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json"
@@ -667,7 +724,7 @@ async function handleObjectUpdate(values) {
         if (geometryViewer) {
           try {
             console.log("Reloading geometry from server...");
-            const reloadResponse = await fetch(`/api/geometry/${sessionId}`);
+            const reloadResponse = await fetch(`/api/geometry/${siteSessionId}`);
             if (reloadResponse.ok) {
               const data = await reloadResponse.json();
               console.log("Geometry reloaded from server, points:", data.points);
@@ -713,23 +770,10 @@ async function handleObjectUpdate(values) {
       
       let response;
       
-      // Task 6.3.3.1.3.1: Arc - Recreate by Bearing to Center
-      if (values.segmentType === "arc" && values.activeBlock === "arc-recreate") {
-        const body = {
-          startPoint: values.startPoint || { x: values.startX, y: values.startY },
-          quadrant: values.quadrant,
-          bearing: values.bearing,
-          radius: values.radius,
-          rotation: values.rotation || "cw"
-        };
-        if (values.length != null) body.length = values.length;
-        else body.angle = values.angle;
-        response = await fetch(`/api/geometry/${sessionId}/arc/${values.id}/recalculate`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body)
-        });
-      } else if (values.segmentType === "arc" && (values.activeBlock === "arc-params" || values.activeBlock === "arc-points")) {
+      if (values.segmentType === "arc" && values.activeBlock === "arc-params" && values.center) {
+        await arcApi.moveCenter(siteSessionId, values.id, values.center);
+        response = { ok: true, json: async () => ({}) };
+      } else if (values.segmentType === "arc" && values.activeBlock === "arc-points") {
         const updateData = {
           startX: values.startX,
           startY: values.startY,
@@ -737,11 +781,8 @@ async function handleObjectUpdate(values) {
           endY: values.endY,
           layer: values.layer || ""
         };
-        response = await fetch(`/api/geometry/${sessionId}/segment/${values.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(updateData)
-        });
+        await arcApi.updateSegment(siteSessionId, values.id, updateData);
+        response = { ok: true, json: async () => ({}) };
       } else if (values.activeBlock === "bearings") {
         // Send request to recalculation endpoint (Task 1.2.3)
         const updateData = {
@@ -752,12 +793,12 @@ async function handleObjectUpdate(values) {
         };
         
         console.log("Sending recalculation request:", { 
-          url: `/api/geometry/${sessionId}/segment/${values.id}/recalculate`,
+          url: `/api/geometry/${siteSessionId}/segment/${values.id}/recalculate`,
           method: "PUT",
           data: updateData 
         });
         
-        response = await fetch(`/api/geometry/${sessionId}/segment/${values.id}/recalculate`, {
+        response = await fetch(`/api/geometry/${siteSessionId}/segment/${values.id}/recalculate`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json"
@@ -777,12 +818,12 @@ async function handleObjectUpdate(values) {
         };
         
         console.log("Sending update request:", { 
-          url: `/api/geometry/${sessionId}/segment/${values.id}`,
+          url: `/api/geometry/${siteSessionId}/segment/${values.id}`,
           method: "PUT",
           data: updateData 
         });
         
-        response = await fetch(`/api/geometry/${sessionId}/segment/${values.id}`, {
+        response = await fetch(`/api/geometry/${siteSessionId}/segment/${values.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json"
@@ -803,7 +844,7 @@ async function handleObjectUpdate(values) {
         if (geometryViewer) {
           try {
             console.log("Reloading geometry from server...");
-            const reloadResponse = await fetch(`/api/geometry/${sessionId}`);
+            const reloadResponse = await fetch(`/api/geometry/${siteSessionId}`);
             if (reloadResponse.ok) {
               const data = await reloadResponse.json();
               console.log("Geometry reloaded from server, segments:", data.segments);
@@ -967,19 +1008,19 @@ async function displayRasterPreview(imageUrl, statusElement, metadata = {}) {
       
       // Load alignment.json after setting raster source
       try {
-        const getSessionId = () => {
-          if (window.sessionData && window.sessionData.id) {
-            return window.sessionData.id;
+        const getSiteSessionId = () => {
+          if (window.siteSessionData && window.siteSessionData.id) {
+            return window.siteSessionData.id;
           }
           const urlParams = new URLSearchParams(window.location.search);
-          const sessionId = urlParams.get("session_id");
-          return sessionId ? parseInt(sessionId, 10) : null;
+          const siteSessionId = urlParams.get("site_session_id");
+          return siteSessionId ? parseInt(siteSessionId, 10) : null;
         };
         
-        const sessionId = getSessionId();
-        if (sessionId) {
+        const siteSessionId = getSiteSessionId();
+        if (siteSessionId) {
           const { nameWithoutExt } = extractImageFilename(imageUrl);
-          const alignmentUrl = `/api/alignment/${sessionId}/${nameWithoutExt}.png`;
+          const alignmentUrl = `/api/alignment/${siteSessionId}/${nameWithoutExt}.png`;
           
           const alignmentResponse = await fetch(alignmentUrl);
           if (alignmentResponse.ok) {
@@ -1075,32 +1116,32 @@ function setupUploadControls() {
     const formData = new FormData();
     formData.append("document", file);
 
-    // Get session_id from window.sessionData or URL parameters
-    let sessionId = null;
-    if (window.sessionData && window.sessionData.id) {
-      sessionId = window.sessionData.id;
+    // Get site_session_id from window.siteSessionData or URL parameters
+    let siteSessionId = null;
+    if (window.siteSessionData && window.siteSessionData.id) {
+      siteSessionId = window.siteSessionData.id;
     } else {
-      // Fallback: extract session_id from current page URL
+      // Fallback: extract site_session_id from current page URL
       const urlParams = new URLSearchParams(window.location.search);
-      const urlSessionId = urlParams.get("session_id");
+      const urlSessionId = urlParams.get("site_session_id");
       if (urlSessionId) {
-        sessionId = parseInt(urlSessionId, 10);
+        siteSessionId = parseInt(urlSessionId, 10);
       }
     }
 
-    // Check if session_id is available
-    if (!sessionId) {
+    // Check if site_session_id is available
+    if (!siteSessionId) {
       showMessage(
         status,
-        "Session ID is required. Please open drafter with a session (e.g., /drafter?session_id=1).",
+        "Site session ID is required. Please open drafter with a site session (e.g., /drafter?site_session_id=1).",
         true
       );
       return;
     }
 
-    // Add session_id to URL and FormData
-    const uploadUrl = `/api/upload-document?session_id=${sessionId}`;
-    formData.append("session_id", sessionId);
+    // Add site_session_id to URL and FormData
+    const uploadUrl = `/api/upload-document?site_session_id=${siteSessionId}`;
+    formData.append("site_session_id", siteSessionId);
 
     try {
       const response = await fetch(uploadUrl, {
@@ -1189,26 +1230,26 @@ function setupDrawingControls() {
   
   let currentMode = null; // No mode selected initially
   
-  // Get session ID
-  const getSessionId = () => {
-    if (window.sessionData && window.sessionData.id) {
-      return window.sessionData.id;
+  // Get site session ID
+  const getSiteSessionId = () => {
+    if (window.siteSessionData && window.siteSessionData.id) {
+      return window.siteSessionData.id;
     }
     const urlParams = new URLSearchParams(window.location.search);
-    const sessionId = urlParams.get("session_id");
-    return sessionId ? parseInt(sessionId, 10) : null;
+    const siteSessionId = urlParams.get("site_session_id");
+    return siteSessionId ? parseInt(siteSessionId, 10) : null;
   };
   
   // Load current geometry from server
   const loadGeometry = async (preserveView = false) => {
-    const sessionId = getSessionId();
-    if (!sessionId) {
-      console.warn("No session ID available");
+    const siteSessionId = getSiteSessionId();
+    if (!siteSessionId) {
+      console.warn("No site session ID available");
       return null;
     }
     
     try {
-      const response = await fetch(`/api/geometry/${sessionId}`);
+      const response = await fetch(`/api/geometry/${siteSessionId}`);
       if (response.ok) {
         const data = await response.json();
         if (geometryViewer) {
@@ -1224,14 +1265,14 @@ function setupDrawingControls() {
   
   // Save point to server
   const savePoint = async (x, y) => {
-    const sessionId = getSessionId();
-    if (!sessionId) {
-      console.error("No session ID available");
+    const siteSessionId = getSiteSessionId();
+    if (!siteSessionId) {
+      console.error("No site session ID available");
       return;
     }
     
     try {
-      const response = await fetch(`/api/geometry/${sessionId}/point`, {
+      const response = await fetch(`/api/geometry/${siteSessionId}/point`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -1245,7 +1286,7 @@ function setupDrawingControls() {
         // Reload geometry to show new point, but preserve current view
         if (geometryViewer) {
           try {
-            const reloadResponse = await fetch(`/api/geometry/${sessionId}`);
+            const reloadResponse = await fetch(`/api/geometry/${siteSessionId}`);
             if (reloadResponse.ok) {
               const data = await reloadResponse.json();
               // Load data without changing view (preserve zoom and position)
@@ -1272,14 +1313,14 @@ function setupDrawingControls() {
   
   // Save segment to server
   const saveSegment = async (startX, startY, endX, endY) => {
-    const sessionId = getSessionId();
-    if (!sessionId) {
-      console.error("No session ID available");
+    const siteSessionId = getSiteSessionId();
+    if (!siteSessionId) {
+      console.error("No site session ID available");
       return;
     }
     
     try {
-      const response = await fetch(`/api/geometry/${sessionId}/segment`, {
+      const response = await fetch(`/api/geometry/${siteSessionId}/segment`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -1368,206 +1409,107 @@ function setupDrawingControls() {
     saveSegment(startX, startY, endX, endY);
   };
 
+  // Arc by tangent & radius: one click → open params form; Apply → API
+  const add_arc_by_tan_radius_rotation = (worldPoint, tangentOrNull) => {
+    if (!propertyEditor || !geometryViewer) return;
+    const siteSessionId = getSiteSessionId();
+    if (!siteSessionId) {
+      console.error("No site session ID available");
+      return;
+    }
+    const canvasPos = geometryViewer.worldToCanvas(worldPoint.x, worldPoint.y);
+    const containerEl = document.getElementById("geometry-viewer");
+    const containerRect = containerEl ? containerEl.getBoundingClientRect() : { left: 0, top: 0 };
+    const position = { x: containerRect.left + canvasPos.x, y: containerRect.top + canvasPos.y };
+
+    propertyEditor.show(
+      {
+        type: "arc-tan-radius-params",
+        pt1: { x: worldPoint.x, y: worldPoint.y },
+        tang: tangentOrNull != null && !Number.isNaN(tangentOrNull) ? tangentOrNull : undefined,
+        radius: "",
+        rotation: "cw",
+        length: "",
+        delta: ""
+      },
+      position,
+      async (values) => {
+        if (values.type !== "arc-tan-radius-params") return;
+        try {
+          await arcApi.createByTanRadiusRotation(siteSessionId, {
+            pt1: values.pt1,
+            tang: values.tang,
+            radius: values.radius,
+            rotation: values.rotation,
+            length: values.length,
+            delta: values.delta
+          });
+          await loadGeometry();
+          propertyEditor.hide();
+        } catch (err) {
+          console.error("Error creating arc by tan/radius:", err);
+          alert(err.message || "Error creating arc");
+        }
+      },
+      () => { propertyEditor.hide(); }
+    );
+  };
+
   // Task 6.1.5.2: Save arc from three points and open property editor
   const saveArcFromThreePoints = async (pt1, pt2, pt3) => {
-    const sessionId = getSessionId();
-    if (!sessionId) {
-      console.error("No session ID available");
+    const siteSessionId = getSiteSessionId();
+    if (!siteSessionId) {
+      console.error("No site session ID available");
       return;
     }
     try {
-      const response = await fetch(`/api/geometry/${sessionId}/arc/from-three-points`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pt1: { x: pt1.x, y: pt1.y },
-          pt2: { x: pt2.x, y: pt2.y },
-          pt3: { x: pt3.x, y: pt3.y }
-        })
-      });
-      if (response.ok) {
-        const result = await response.json();
-        const data = await loadGeometry(true);
-        if (data && result.arc) {
-          if (propertyEditor && geometryViewer) {
-            const canvasPos = geometryViewer.worldToCanvas(result.arc.end.x, result.arc.end.y);
-            const containerRect = document.getElementById("geometry-viewer").getBoundingClientRect();
-            propertyEditor.show(
-              {
-                type: "segment",
-                id: result.arc.id,
-                segmentType: "arc",
-                startX: result.arc.start.x,
-                startY: result.arc.start.y,
-                endX: result.arc.end.x,
-                endY: result.arc.end.y,
-                center: result.arc.center,
-                radius: result.arc.radius,
-                rotation: result.arc.rotation || result.arc.rot,
-                delta: result.arc.delta,
-                length: result.arc.length,
-                layer: result.arc.layer || ""
-              },
-              { x: containerRect.left + canvasPos.x, y: containerRect.top + canvasPos.y },
-              (values) => handleObjectUpdate(values),
-              () => {}
-            );
-          }
-        }
-      } else {
-        const err = await response.json().catch(async () => ({ message: await response.text() }));
-        alert(err.message || "Failed to create arc");
+      const result = await arcApi.createFromThreePoints(siteSessionId, pt1, pt2, pt3);
+      const data = await loadGeometry(true);
+      if (data && result.arc && propertyEditor && geometryViewer) {
+        const canvasPos = geometryViewer.worldToCanvas(result.arc.end.x, result.arc.end.y);
+        const containerRect = document.getElementById("geometry-viewer").getBoundingClientRect();
+        propertyEditor.show(
+          {
+            type: "segment",
+            id: result.arc.id,
+            segmentType: "arc",
+            startX: result.arc.start.x,
+            startY: result.arc.start.y,
+            endX: result.arc.end.x,
+            endY: result.arc.end.y,
+            center: result.arc.center,
+            radius: result.arc.radius,
+            rotation: result.arc.rotation || result.arc.rot,
+            delta: result.arc.delta,
+            length: result.arc.length,
+            layer: result.arc.layer || ""
+          },
+          { x: containerRect.left + canvasPos.x, y: containerRect.top + canvasPos.y },
+          (values) => handleObjectUpdate(values),
+          () => {}
+        );
       }
     } catch (error) {
       console.error("Error saving arc:", error);
-      alert("Error creating arc: " + error.message);
+      alert(error.message || "Error creating arc");
     }
   };
 
-  // Task 6.2.4.2.3: Dialog for tangent arc (radius, length or angle, rotation)
-  function showArcTangentDialog(point, tangentDirection, onConfirm) {
-    const div = document.createElement("div");
-    div.className = "arc-dialog-overlay";
-    div.innerHTML = `
-      <div class="arc-dialog">
-        <h4>Arc from tangent</h4>
-        <label>Radius: <input type="number" id="arc-tan-radius" step="0.0001" value="10"></label>
-        <label><input type="radio" name="arc-tan-measure" value="length" checked> Length: <input type="number" id="arc-tan-length" step="0.0001" value="5"></label>
-        <label><input type="radio" name="arc-tan-measure" value="angle"> Angle (deg): <input type="number" id="arc-tan-angle" step="0.01" value="30" min="0" max="360"></label>
-        <label>Rotation: <select id="arc-tan-rotation"><option value="cw">CW</option><option value="ccw">CCW</option></select></label>
-        <div><button type="button" id="arc-tan-ok">OK</button> <button type="button" id="arc-tan-cancel">Cancel</button></div>
-      </div>`;
-    div.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9999";
-    document.body.appendChild(div);
-    const ok = () => {
-      const radius = parseFloat(div.querySelector("#arc-tan-radius").value);
-      const useLength = div.querySelector('input[name="arc-tan-measure"][value="length"]').checked;
-      const lengthOrAngle = useLength ? parseFloat(div.querySelector("#arc-tan-length").value) : parseFloat(div.querySelector("#arc-tan-angle").value);
-      const rotation = div.querySelector("#arc-tan-rotation").value;
-      div.remove();
-      onConfirm(radius, lengthOrAngle, useLength, rotation);
-    };
-    div.querySelector("#arc-tan-ok").addEventListener("click", ok);
-    div.querySelector("#arc-tan-cancel").addEventListener("click", () => div.remove());
-  }
-
-  // Task 6.3.5.2.2: Dialog for bearing-to-center arc
-  function showArcBearingDialog(point, onConfirm) {
-    const div = document.createElement("div");
-    div.className = "arc-dialog-overlay";
-    div.innerHTML = `
-      <div class="arc-dialog">
-        <h4>Arc by bearing to center</h4>
-        <label>Quadrant: <select id="arc-bear-quadrant"><option value="NE">NE</option><option value="NW">NW</option><option value="SW">SW</option><option value="SE">SE</option></select></label>
-        <label>Bearing (decimal 0-90): <input type="number" id="arc-bear-bearing" step="0.01" value="45" min="0" max="90"></label>
-        <label>Radius: <input type="number" id="arc-bear-radius" step="0.0001" value="10"></label>
-        <label><input type="radio" name="arc-bear-measure" value="length" checked> Length: <input type="number" id="arc-bear-length" step="0.0001" value="5"></label>
-        <label><input type="radio" name="arc-bear-measure" value="angle"> Angle (deg): <input type="number" id="arc-bear-angle" step="0.01" value="30" min="0" max="360"></label>
-        <label>Rotation: <select id="arc-bear-rotation"><option value="cw">CW</option><option value="ccw">CCW</option></select></label>
-        <div><button type="button" id="arc-bear-ok">OK</button> <button type="button" id="arc-bear-cancel">Cancel</button></div>
-      </div>`;
-    div.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9999";
-    document.body.appendChild(div);
-    const ok = () => {
-      const quadrant = div.querySelector("#arc-bear-quadrant").value;
-      const bearingDecimal = parseFloat(div.querySelector("#arc-bear-bearing").value);
-      const radius = parseFloat(div.querySelector("#arc-bear-radius").value);
-      const useLength = div.querySelector('input[name="arc-bear-measure"][value="length"]').checked;
-      const lengthOrAngle = useLength ? parseFloat(div.querySelector("#arc-bear-length").value) : parseFloat(div.querySelector("#arc-bear-angle").value);
-      const rotation = div.querySelector("#arc-bear-rotation").value;
-      div.remove();
-      onConfirm(quadrant, bearingDecimal, radius, lengthOrAngle, useLength, rotation);
-    };
-    div.querySelector("#arc-bear-ok").addEventListener("click", ok);
-    div.querySelector("#arc-bear-cancel").addEventListener("click", () => div.remove());
-  }
-
-  // Task 6.2.4.3: Save arc from tangent (after user fills dialog)
-  const saveArcFromTangent = async (startPoint, tangentDirection, radius, lengthOrAngle, useLength, rotation) => {
-    const sessionId = getSessionId();
-    if (!sessionId) return;
-    const body = {
-      startPoint: { x: startPoint.x, y: startPoint.y },
-      tangentDirection,
-      radius,
-      rotation: rotation || "cw"
-    };
-    if (useLength) body.length = lengthOrAngle; else body.angle = lengthOrAngle;
-    try {
-      const response = await fetch(`/api/geometry/${sessionId}/arc/from-tangent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      if (response.ok) {
-        await loadGeometry(true);
-        const result = await response.json();
-        if (result.arc && propertyEditor && geometryViewer) {
-          const canvasPos = geometryViewer.worldToCanvas(result.arc.end.x, result.arc.end.y);
-          const containerRect = document.getElementById("geometry-viewer").getBoundingClientRect();
-          propertyEditor.show(
-            { type: "segment", id: result.arc.id, segmentType: "arc", ...result.arc },
-            { x: containerRect.left + canvasPos.x, y: containerRect.top + canvasPos.y },
-            (values) => handleObjectUpdate(values),
-            () => {}
-          );
-        }
-      } else {
-        const err = await response.json().catch(async () => ({ message: await response.text() }));
-        alert(err.message || "Failed to create arc");
-      }
-    } catch (error) {
-      alert("Error: " + error.message);
-    }
-  };
-
-  // Task 6.3.5.3: Save arc from bearing to center (after user fills dialog)
-  const saveArcFromBearingToCenter = async (startPoint, quadrant, bearingDecimal, radius, lengthOrAngle, useLength, rotation) => {
-    const sessionId = getSessionId();
-    if (!sessionId) return;
-    const body = {
-      startPoint: { x: startPoint.x, y: startPoint.y },
-      quadrant,
-      bearing: bearingDecimal,
-      radius,
-      rotation: rotation || "cw"
-    };
-    if (useLength) body.length = lengthOrAngle; else body.angle = lengthOrAngle;
-    try {
-      const response = await fetch(`/api/geometry/${sessionId}/arc/from-bearing-to-center`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      if (response.ok) {
-        await loadGeometry(true);
-        const result = await response.json();
-        if (result.arc && propertyEditor && geometryViewer) {
-          const canvasPos = geometryViewer.worldToCanvas(result.arc.end.x, result.arc.end.y);
-          const containerRect = document.getElementById("geometry-viewer").getBoundingClientRect();
-          propertyEditor.show(
-            { type: "segment", id: result.arc.id, segmentType: "arc", ...result.arc },
-            { x: containerRect.left + canvasPos.x, y: containerRect.top + canvasPos.y },
-            (values) => handleObjectUpdate(values),
-            () => {}
-          );
-        }
-      } else {
-        const err = await response.json().catch(async () => ({ message: await response.text() }));
-        alert(err.message || "Failed to create arc");
-      }
-    } catch (error) {
-      alert("Error: " + error.message);
-    }
-  };
-  
   // Update button states
   const updateButtonStates = (activeMode) => {
     console.log(`updateButtonStates called with activeMode: ${activeMode}`);
     drawingButtons.forEach((button) => {
       const mode = button.dataset.mode;
       // Skip toggle buttons that maintain their own state
-      if (mode === "snap" || mode === "undo" || mode === "delete" || mode === "redo" || mode === "layers" || mode === "table") {
+      if (mode === "snap" || mode === "undo" || mode === "delete" || mode === "redo" || mode === "layers" || mode === "table" || mode === "arc-three-points" || mode === "arc-tangent" || mode === "arc-fillet") {
+        return;
+      }
+      // Arc dropdown trigger is active when arc-by-three-points or arc-by-tangent mode is on
+      if (mode === "arc-dropdown") {
+        const isActive = activeMode === "arcs-three-points" || activeMode === "arcs-tan-radius";
+        button.dataset.state = isActive ? "active" : "inactive";
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+        button.classList.toggle("active", isActive);
         return;
       }
       if (mode === activeMode) {
@@ -1733,18 +1675,8 @@ function setupDrawingControls() {
         geometryViewer.setDrawingMode("segments", handleSegmentClick);
       } else if (mode === "arcs-three-points") {
         geometryViewer.setDrawingMode("arcs-three-points", saveArcFromThreePoints);
-      } else if (mode === "arcs-tangent") {
-        geometryViewer.setDrawingMode("arcs-tangent", (point, tangentDir) => {
-          showArcTangentDialog(point, tangentDir, (radius, lengthOrAngle, useLength, rotation) => {
-            saveArcFromTangent(point, tangentDir, radius, lengthOrAngle, useLength, rotation);
-          });
-        });
-      } else if (mode === "arcs-bearing-to-center") {
-        geometryViewer.setDrawingMode("arcs-bearing-to-center", (point) => {
-          showArcBearingDialog(point, (quadrant, bearingDecimal, radius, lengthOrAngle, useLength, rotation) => {
-            saveArcFromBearingToCenter(point, quadrant, bearingDecimal, radius, lengthOrAngle, useLength, rotation);
-          });
-        });
+      } else if (mode === "arcs-tan-radius") {
+        geometryViewer.setDrawingMode("arcs-tan-radius", add_arc_by_tan_radius_rotation);
       } else if (mode === "polygon-select") {
         console.log("Setting geometryViewer to polygon-select mode");
         // Create new SelectionSet when starting polygon selection
@@ -1774,14 +1706,14 @@ function setupDrawingControls() {
   
   // Handle undo action
   const handleUndo = async () => {
-    const sessionId = getSessionId();
-    if (!sessionId) {
-      console.error("No session ID available");
+    const siteSessionId = getSiteSessionId();
+    if (!siteSessionId) {
+      console.error("No site session ID available");
       return;
     }
     
     try {
-      const response = await fetch(`/api/geometry/${sessionId}/undo`, {
+      const response = await fetch(`/api/geometry/${siteSessionId}/undo`, {
         method: "POST"
       });
       
@@ -1805,9 +1737,9 @@ function setupDrawingControls() {
   
   // Handle delete action
   const handleDelete = async () => {
-    const sessionId = getSessionId();
-    if (!sessionId) {
-      console.error("No session ID available");
+    const siteSessionId = getSiteSessionId();
+    if (!siteSessionId) {
+      console.error("No site session ID available");
       return;
     }
     
@@ -1840,7 +1772,7 @@ function setupDrawingControls() {
         try {
           console.log(`Deleting ${i + 1}/${deletionList.length}: ${obj.type}/${obj.id}`);
           const response = await fetch(
-            `/api/geometry/${sessionId}/${obj.type}/${obj.id}`,
+            `/api/geometry/${siteSessionId}/${obj.type}/${obj.id}`,
             {
               method: "DELETE"
             }
@@ -1947,7 +1879,7 @@ function setupDrawingControls() {
     
     try {
       const response = await fetch(
-        `/api/geometry/${sessionId}/${selectedObject.type}/${selectedObject.id}`,
+        `/api/geometry/${siteSessionId}/${selectedObject.type}/${selectedObject.id}`,
         {
           method: "DELETE"
         }
@@ -1986,6 +1918,22 @@ function setupDrawingControls() {
     }
   };
   
+  // Arc dropdown: toggle and close on outside click
+  const arcDropdown = drawingControls.querySelector("[data-arc-dropdown]");
+  const closeArcDropdown = () => {
+    if (!arcDropdown) return;
+    arcDropdown.classList.remove("is-open");
+    const trigger = arcDropdown.querySelector("[data-mode='arc-dropdown']");
+    const menu = arcDropdown.querySelector(".drawing-controls__arc-menu");
+    if (trigger) trigger.setAttribute("aria-expanded", "false");
+    if (menu) menu.hidden = true;
+  };
+  if (arcDropdown) {
+    document.addEventListener("click", (event) => {
+      if (!arcDropdown.contains(event.target)) closeArcDropdown();
+    });
+  }
+
   // Add click handlers to buttons
   drawingButtons.forEach((button) => {
     const mode = button.dataset.mode;
@@ -1995,6 +1943,41 @@ function setupDrawingControls() {
       console.log(`Button clicked: ${mode}, currentMode: ${currentMode}`);
       event.preventDefault();
       event.stopPropagation();
+      
+      if (mode === "arc-dropdown") {
+        const wrapper = button.closest("[data-arc-dropdown]");
+        const menu = wrapper?.querySelector(".drawing-controls__arc-menu");
+        const isOpen = wrapper?.classList.toggle("is-open");
+        button.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        if (menu) menu.hidden = !isOpen;
+        return;
+      }
+      if (mode === "arc-three-points") {
+        closeArcDropdown();
+        setMode("arcs-three-points");
+        return;
+      }
+      if (mode === "arc-tangent") {
+        closeArcDropdown();
+        if (!snapEnabled) {
+          snapEnabled = true;
+          const snapBtn = Array.from(drawingButtons).find(b => b.dataset.mode === "snap");
+          if (snapBtn) {
+            snapBtn.dataset.state = "active";
+            snapBtn.setAttribute("aria-pressed", "true");
+            snapBtn.classList.add("active");
+          }
+          if (geometryViewer) {
+            geometryViewer.setSnapEnabled(true);
+          }
+        }
+        setMode("arcs-tan-radius");
+        return;
+      }
+      if (mode === "arc-fillet") {
+        closeArcDropdown();
+        return;
+      }
       
       if (mode === "undo") {
         handleUndo();
@@ -2096,7 +2079,7 @@ function setupDrawingControls() {
   
   // Load geometry on page load (after a short delay to ensure geometryViewer is ready)
   setTimeout(() => {
-    if (getSessionId() && geometryViewer) {
+    if (getSiteSessionId() && geometryViewer) {
       loadGeometry();
     }
   }, 200);
@@ -2588,15 +2571,15 @@ function initializeDrafterPage() {
   }
   
   // Load processed_drawing if available in session data
-  if (window.sessionData && window.sessionData.paths) {
+  if (window.siteSessionData && window.siteSessionData.paths) {
     console.log("Checking for processed_drawing_url:", {
-      hasPaths: !!window.sessionData.paths,
-      hasUrl: !!window.sessionData.paths.processed_drawing_url,
-      url: window.sessionData.paths.processed_drawing_url
+      hasPaths: !!window.siteSessionData.paths,
+      hasUrl: !!window.siteSessionData.paths.processed_drawing_url,
+      url: window.siteSessionData.paths.processed_drawing_url
     });
     
-    if (window.sessionData.paths.processed_drawing_url) {
-      const imageUrl = window.sessionData.paths.processed_drawing_url;
+    if (window.siteSessionData.paths.processed_drawing_url) {
+      const imageUrl = window.siteSessionData.paths.processed_drawing_url;
       const statusElement = document.getElementById("upload-status");
       
       console.log("Loading processed drawing from URL:", imageUrl);

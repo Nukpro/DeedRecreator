@@ -13,6 +13,7 @@ export default class PropertyEditor {
     this.ignoreNextClick = false; // Flag to ignore the click that opened the editor
     this.openedAt = null; // Timestamp when editor was opened
     this._documentKeyHandler = null; // Document-level keyboard handler
+    this._dragState = null; // State for drag and drop
   }
 
   show(object, position, onSave, onCancel) {
@@ -64,8 +65,9 @@ export default class PropertyEditor {
     const padding = 10; // Padding from edges
 
     // Convert viewport coordinates to container-relative coordinates
-    let left = position.x - containerRect.left;
-    let top = position.y - containerRect.top;
+    // Add offset: 50px right and 50px down from click position
+    let left = position.x - containerRect.left + 50;
+    let top = position.y - containerRect.top + 50;
 
     // Adjust horizontal position
     if (left + elementRect.width > containerRect.width - padding) {
@@ -109,6 +111,9 @@ export default class PropertyEditor {
     setTimeout(() => {
       document.addEventListener("click", this.handleOutsideClick.bind(this), true);
     }, 100); // Small delay to prevent immediate closing
+
+    // Attach drag and drop handlers for header
+    this._attachDragHandlers();
   }
 
   createContent(object) {
@@ -121,7 +126,63 @@ export default class PropertyEditor {
       }
       return this.createSegmentEditor(object);
     }
+    if (object.type === "arc-tan-radius-params") {
+      return this.createArcByTanRadiusEditor(object);
+    }
     return "<div>Unknown object type</div>";
+  }
+
+  createArcByTanRadiusEditor(object) {
+    const pt1x = object.pt1 && object.pt1.x !== undefined ? Number(object.pt1.x).toFixed(4) : "";
+    const pt1y = object.pt1 && object.pt1.y !== undefined ? Number(object.pt1.y).toFixed(4) : "";
+    const tangVal = object.tang != null && !Number.isNaN(object.tang) ? Number(object.tang).toFixed(2) : "";
+    const rotation = object.rotation === "ccw" ? "ccw" : "cw";
+    const radius = object.radius != null && !Number.isNaN(object.radius) ? Number(object.radius) : "";
+    const length = object.length != null && !Number.isNaN(object.length) ? Number(object.length) : "";
+    const delta = object.delta != null && !Number.isNaN(object.delta) ? Number(object.delta) : "";
+    return `
+      <div class="property-editor__header">
+        <h3>Arc by tangent &amp; radius</h3>
+        <button class="property-editor__close" type="button" aria-label="Close">\u00D7</button>
+      </div>
+      <div class="property-editor__body">
+        <div class="property-editor__field">
+          <label>Start point X:</label>
+          <input type="number" id="arc-tan-pt1-x" value="${pt1x}" step="0.0001" placeholder="Start X">
+        </div>
+        <div class="property-editor__field">
+          <label>Start point Y:</label>
+          <input type="number" id="arc-tan-pt1-y" value="${pt1y}" step="0.0001" placeholder="Start Y">
+        </div>
+        <div class="property-editor__field">
+          <label>Tangent (deg, North=0):</label>
+          <input type="number" id="arc-tan-tang" value="${tangVal}" step="0.01" placeholder="Empty if not on object">
+        </div>
+        <div class="property-editor__field">
+          <label>Radius:</label>
+          <input type="number" id="arc-tan-radius" value="${radius}" step="0.0001" min="0.0001" placeholder="Required">
+        </div>
+        <div class="property-editor__field">
+          <label>Direction:</label>
+          <select id="arc-tan-rotation">
+            <option value="cw" ${rotation === "cw" ? "selected" : ""}>CW</option>
+            <option value="ccw" ${rotation === "ccw" ? "selected" : ""}>CCW</option>
+          </select>
+        </div>
+        <div class="property-editor__field property-editor__field--wide-input">
+          <label for="arc-tan-length">Length:</label>
+          <input type="number" id="arc-tan-length" value="${length}" step="0.0001" min="0" placeholder="Optional" title="Optional — use length or delta">
+        </div>
+        <div class="property-editor__field property-editor__field--wide-input">
+          <label for="arc-tan-delta">Delta (deg):</label>
+          <input type="number" id="arc-tan-delta" value="${delta}" step="0.01" placeholder="Optional" title="Optional — use length or delta">
+        </div>
+      </div>
+      <div class="property-editor__footer">
+        <button class="property-editor__btn property-editor__btn--save" type="button">Apply</button>
+        <button class="property-editor__btn property-editor__btn--cancel" type="button">Cancel</button>
+      </div>
+    `;
   }
 
   createPointEditor(point) {
@@ -230,40 +291,6 @@ export default class PropertyEditor {
             <div class="property-editor__field">
               <label>End Y:</label>
               <input type="number" id="arc-end-y" value="${endY}" step="0.0001">
-            </div>
-          </div>
-        </div>
-        <div class="property-editor__block" data-block="arc-recreate">
-          <div class="property-editor__block-header">
-            <button type="button" class="property-editor__block-toggle" aria-expanded="false">
-              <span class="property-editor__block-title">Recreate by Bearing to Center</span>
-              <span class="property-editor__block-icon">\u25B6</span>
-            </button>
-          </div>
-          <div class="property-editor__block-content" style="display: none;">
-            <div class="property-editor__field">
-              <label>Quadrant:</label>
-              <select id="arc-recreate-quadrant"><option value="NE">NE</option><option value="NW">NW</option><option value="SW">SW</option><option value="SE">SE</option></select>
-            </div>
-            <div class="property-editor__field">
-              <label>Bearing (0-90):</label>
-              <input type="number" id="arc-recreate-bearing" step="0.01" value="45" min="0" max="90">
-            </div>
-            <div class="property-editor__field">
-              <label>Radius:</label>
-              <input type="number" id="arc-recreate-radius" step="0.0001" value="${radius}">
-            </div>
-            <div class="property-editor__field">
-              <label><input type="radio" name="arc-recreate-measure" value="length" checked> Length:</label>
-              <input type="number" id="arc-recreate-length" step="0.0001" value="${length}">
-            </div>
-            <div class="property-editor__field">
-              <label><input type="radio" name="arc-recreate-measure" value="angle"> Angle (deg):</label>
-              <input type="number" id="arc-recreate-angle" step="0.01" value="${delta || "30"}" min="0" max="360">
-            </div>
-            <div class="property-editor__field">
-              <label>Rotation:</label>
-              <select id="arc-recreate-rotation"><option value="cw" ${rotation === "cw" ? "selected" : ""}>CW</option><option value="ccw" ${rotation === "ccw" ? "selected" : ""}>CCW</option></select>
             </div>
           </div>
         </div>
@@ -515,6 +542,7 @@ export default class PropertyEditor {
     // Remove keyboard handlers before hiding
     this._removeKeyboardHandlers();
     this._removeDocumentKeyHandler();
+    this._removeDragHandlers();
     
     if (this.element) {
       this.element.remove();
@@ -602,59 +630,16 @@ export default class PropertyEditor {
       if (currentObject.segmentType === "arc") {
         const arcParamsBlock = element.querySelector('[data-block="arc-params"]');
         const arcPointsBlock = element.querySelector('[data-block="arc-points"]');
-        const arcRecreateBlock = element.querySelector('[data-block="arc-recreate"]');
         const arcParamsExpanded = arcParamsBlock && arcParamsBlock.querySelector('.property-editor__block-toggle')?.getAttribute("aria-expanded") === "true";
         const arcPointsExpanded = arcPointsBlock && arcPointsBlock.querySelector('.property-editor__block-toggle')?.getAttribute("aria-expanded") === "true";
-        const arcRecreateExpanded = arcRecreateBlock && arcRecreateBlock.querySelector('.property-editor__block-toggle')?.getAttribute("aria-expanded") === "true";
         const layerInput = element.querySelector("#arc-layer");
         const layerValue = layerInput ? layerInput.value.trim() : "";
-        if (arcRecreateExpanded) {
-          const quadrant = element.querySelector("#arc-recreate-quadrant")?.value || "NE";
-          const bearing = parseFloat(element.querySelector("#arc-recreate-bearing")?.value || "0");
-          const radius = parseFloat(element.querySelector("#arc-recreate-radius")?.value || "0");
-          const useLength = element.querySelector('input[name="arc-recreate-measure"][value="length"]')?.checked;
-          const lengthVal = parseFloat(element.querySelector("#arc-recreate-length")?.value || "0");
-          const angleVal = parseFloat(element.querySelector("#arc-recreate-angle")?.value || "0");
-          const rotation = element.querySelector("#arc-recreate-rotation")?.value || "cw";
-          const startX = currentObject.start?.x ?? currentObject.startX ?? 0;
-          const startY = currentObject.start?.y ?? currentObject.startY ?? 0;
-          if (isNaN(bearing) || bearing < 0 || bearing > 90) {
-            alert("Bearing must be 0-90");
-            return null;
-          }
-          if (radius <= 0) {
-            alert("Radius must be > 0");
-            return null;
-          }
-          if (useLength && (isNaN(lengthVal) || lengthVal <= 0)) {
-            alert("Length must be > 0");
-            return null;
-          }
-          if (!useLength && (isNaN(angleVal) || angleVal <= 0 || angleVal > 360)) {
-            alert("Angle must be > 0 and <= 360");
-            return null;
-          }
-          return {
-            type: "segment",
-            segmentType: "arc",
-            id: currentObject.id,
-            activeBlock: "arc-recreate",
-            startPoint: { x: startX, y: startY },
-            quadrant,
-            bearing,
-            radius,
-            length: useLength ? lengthVal : undefined,
-            angle: useLength ? undefined : angleVal,
-            rotation,
-            layer: layerValue
-          };
-        }
         if (arcParamsExpanded || arcPointsExpanded) {
           const startX = parseFloat(element.querySelector("#arc-start-x")?.value) || (currentObject.start && currentObject.start.x) || currentObject.startX;
           const startY = parseFloat(element.querySelector("#arc-start-y")?.value) || (currentObject.start && currentObject.start.y) || currentObject.startY;
           const endX = parseFloat(element.querySelector("#arc-end-x")?.value) || (currentObject.end && currentObject.end.x) || currentObject.endX;
           const endY = parseFloat(element.querySelector("#arc-end-y")?.value) || (currentObject.end && currentObject.end.y) || currentObject.endY;
-          return {
+          const result = {
             type: "segment",
             segmentType: "arc",
             id: currentObject.id,
@@ -662,6 +647,17 @@ export default class PropertyEditor {
             startX, startY, endX, endY,
             layer: layerValue
           };
+          if (arcParamsExpanded) {
+            const centerX = parseFloat(element.querySelector("#arc-center-x")?.value);
+            const centerY = parseFloat(element.querySelector("#arc-center-y")?.value);
+            if (typeof centerX === "number" && !isNaN(centerX) && typeof centerY === "number" && !isNaN(centerY)) {
+              result.center = { x: centerX, y: centerY };
+            } else {
+              const cur = currentObject.center || (currentObject.centerX != null && currentObject.centerY != null ? { x: currentObject.centerX, y: currentObject.centerY } : null);
+              if (cur) result.center = { x: cur.x, y: cur.y };
+            }
+          }
+          return result;
         }
         alert("Open one of the blocks to apply changes");
         return null;
@@ -781,6 +777,71 @@ export default class PropertyEditor {
       // Neither block is open - return error
       alert("Please open either the Bearings or Points block to make changes");
       return null;
+    }
+
+    if (currentObject.type === "arc-tan-radius-params") {
+      const pt1xIn = element.querySelector("#arc-tan-pt1-x")?.value?.trim();
+      const pt1yIn = element.querySelector("#arc-tan-pt1-y")?.value?.trim();
+      const tangIn = element.querySelector("#arc-tan-tang")?.value?.trim();
+      const radiusIn = element.querySelector("#arc-tan-radius")?.value?.trim();
+      const rotationSel = element.querySelector("#arc-tan-rotation");
+      const lengthIn = element.querySelector("#arc-tan-length")?.value?.trim();
+      const deltaIn = element.querySelector("#arc-tan-delta")?.value?.trim();
+
+      if (!pt1xIn || !pt1yIn) {
+        alert("Start point X and Y are required.");
+        return null;
+      }
+      const pt1x = parseFloat(pt1xIn);
+      const pt1y = parseFloat(pt1yIn);
+      if (Number.isNaN(pt1x) || Number.isNaN(pt1y)) {
+        alert("Start point must be numbers.");
+        return null;
+      }
+
+      if (!radiusIn) {
+        alert("Radius is required.");
+        return null;
+      }
+      const radius = parseFloat(radiusIn);
+      if (Number.isNaN(radius) || radius <= 0) {
+        alert("Radius must be a positive number.");
+        return null;
+      }
+
+      if (tangIn === "") {
+        alert("Tangent (direction at start) is required. Snap to an object or enter degrees.");
+        return null;
+      }
+      const tang = parseFloat(tangIn);
+      if (Number.isNaN(tang)) {
+        alert("Tangent must be a number (degrees, North=0).");
+        return null;
+      }
+
+      const rotation = rotationSel?.value === "ccw" ? "ccw" : "cw";
+
+      const hasLength = lengthIn !== "" && !Number.isNaN(parseFloat(lengthIn));
+      const hasDelta = deltaIn !== "" && !Number.isNaN(parseFloat(deltaIn));
+      if (hasLength && hasDelta) {
+        alert("Provide only one of Length or Delta (not both).");
+        return null;
+      }
+      if (!hasLength && !hasDelta) {
+        alert("Provide exactly one of Length or Delta.");
+        return null;
+      }
+
+      const result = {
+        type: "arc-tan-radius-params",
+        pt1: { x: pt1x, y: pt1y },
+        tang,
+        radius,
+        rotation
+      };
+      if (hasLength) result.length = parseFloat(lengthIn);
+      if (hasDelta) result.delta = parseFloat(deltaIn);
+      return result;
     }
 
     console.error("Unknown object type:", currentObject.type);
@@ -1113,5 +1174,136 @@ export default class PropertyEditor {
       }
       this._keyboardHandlers = null;
     }
+  }
+
+  _attachDragHandlers() {
+    if (!this.element) return;
+
+    const header = this.element.querySelector(".property-editor__header");
+    if (!header) return;
+
+    // Make header draggable (but not the close button)
+    const closeBtn = header.querySelector(".property-editor__close");
+    
+    // Bind handlers once and store references
+    this._handleMouseMoveBound = this._handleMouseMove.bind(this);
+    this._handleMouseUpBound = this._handleMouseUp.bind(this);
+    
+    const handleMouseDown = (e) => {
+      // Don't start drag if clicking on close button
+      if (closeBtn && closeBtn.contains(e.target)) {
+        return;
+      }
+      
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const containerRect = this.container.getBoundingClientRect();
+      const elementRect = this.element.getBoundingClientRect();
+      
+      // Store initial mouse position and element position
+      this._dragState = {
+        startX: e.clientX,
+        startY: e.clientY,
+        startLeft: elementRect.left - containerRect.left,
+        startTop: elementRect.top - containerRect.top
+      };
+      
+      // Add event listeners for mouse move and mouse up
+      document.addEventListener("mousemove", this._handleMouseMoveBound);
+      document.addEventListener("mouseup", this._handleMouseUpBound);
+      
+      // Prevent text selection while dragging
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "move";
+    };
+    
+    header.addEventListener("mousedown", handleMouseDown);
+    
+    // Store handler for cleanup
+    this._dragHandlers = {
+      handleMouseDown,
+      header
+    };
+  }
+
+  _handleMouseMove(e) {
+    if (!this._dragState || !this.element) return;
+    
+    const containerRect = this.container.getBoundingClientRect();
+    const elementRect = this.element.getBoundingClientRect();
+    const padding = 10;
+    
+    // Calculate new position
+    const deltaX = e.clientX - this._dragState.startX;
+    const deltaY = e.clientY - this._dragState.startY;
+    
+    let newLeft = this._dragState.startLeft + deltaX;
+    let newTop = this._dragState.startTop + deltaY;
+    
+    // Keep window within container bounds
+    if (newLeft + elementRect.width > containerRect.width - padding) {
+      newLeft = containerRect.width - elementRect.width - padding;
+    }
+    if (newLeft < padding) {
+      newLeft = padding;
+    }
+    
+    if (newTop + elementRect.height > containerRect.height - padding) {
+      newTop = containerRect.height - elementRect.height - padding;
+    }
+    if (newTop < padding) {
+      newTop = padding;
+    }
+    
+    // Update position
+    this.element.style.left = `${newLeft}px`;
+    this.element.style.top = `${newTop}px`;
+  }
+
+  _handleMouseUp(e) {
+    if (!this._dragState) return;
+    
+    // Remove event listeners using stored bound references
+    if (this._handleMouseMoveBound) {
+      document.removeEventListener("mousemove", this._handleMouseMoveBound);
+    }
+    if (this._handleMouseUpBound) {
+      document.removeEventListener("mouseup", this._handleMouseUpBound);
+    }
+    
+    // Restore text selection and cursor
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+    
+    // Clear drag state
+    this._dragState = null;
+  }
+
+  _removeDragHandlers() {
+    if (this._dragHandlers) {
+      const { handleMouseDown, header } = this._dragHandlers;
+      if (header) {
+        header.removeEventListener("mousedown", handleMouseDown);
+      }
+      this._dragHandlers = null;
+    }
+    
+    // Clean up any active drag
+    if (this._dragState) {
+      if (this._handleMouseMoveBound) {
+        document.removeEventListener("mousemove", this._handleMouseMoveBound);
+      }
+      if (this._handleMouseUpBound) {
+        document.removeEventListener("mouseup", this._handleMouseUpBound);
+      }
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      this._dragState = null;
+    }
+    
+    // Clear bound references
+    this._handleMouseMoveBound = null;
+    this._handleMouseUpBound = null;
   }
 }

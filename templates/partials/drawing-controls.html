@@ -30,36 +30,25 @@
         <span class="drawing-btn__icon" aria-hidden="true">━</span>
         <span class="drawing-btn__label">PLine</span>
     </button>
-    <button
-        class="drawing-btn"
-        type="button"
-        data-mode="arcs-three-points"
-        data-state="inactive"
-        aria-pressed="false"
-        title="Draw arc by 3 points">
-        <span class="drawing-btn__icon" aria-hidden="true">⌒</span>
-        <span class="drawing-btn__label">Arc</span>
-    </button>
-    <button
-        class="drawing-btn"
-        type="button"
-        data-mode="arcs-tangent"
-        data-state="inactive"
-        aria-pressed="false"
-        title="Draw arc from tangent (snap to line/arc end)">
-        <span class="drawing-btn__icon" aria-hidden="true">◜</span>
-        <span class="drawing-btn__label">Arc T</span>
-    </button>
-    <button
-        class="drawing-btn"
-        type="button"
-        data-mode="arcs-bearing-to-center"
-        data-state="inactive"
-        aria-pressed="false"
-        title="Draw arc by bearing to center">
-        <span class="drawing-btn__icon" aria-hidden="true">◠</span>
-        <span class="drawing-btn__label">Arc B</span>
-    </button>
+    <div class="drawing-controls__arc-dropdown" data-arc-dropdown>
+        <button
+            class="drawing-btn drawing-btn--dropdown-trigger"
+            type="button"
+            data-mode="arc-dropdown"
+            data-state="inactive"
+            aria-expanded="false"
+            aria-haspopup="true"
+            title="Arc tools">
+            <span class="drawing-btn__icon" aria-hidden="true">⌒</span>
+            <span class="drawing-btn__label">Arc</span>
+            <span class="drawing-btn__chevron" aria-hidden="true">▼</span>
+        </button>
+        <div class="drawing-controls__arc-menu" role="menu" hidden>
+            <button type="button" class="drawing-btn drawing-controls__arc-menu-btn" data-mode="arc-three-points" role="menuitem" title="Arc by three points"><span class="drawing-btn__icon" aria-hidden="true">••⌒</span></button>
+            <button type="button" class="drawing-btn drawing-controls__arc-menu-btn" data-mode="arc-tangent" role="menuitem" title="Arc by tangent"><span class="drawing-btn__icon" aria-hidden="true">⌒╲</span></button>
+            <button type="button" class="drawing-btn drawing-controls__arc-menu-btn" data-mode="arc-fillet" role="menuitem" title="Fillet two segments"><span class="drawing-btn__icon" aria-hidden="true">∟⌒</span></button>
+        </div>
+    </div>
     <button
         class="drawing-btn"
         type="button"

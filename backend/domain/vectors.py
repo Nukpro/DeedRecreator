@@ -14,12 +14,12 @@ from backend.geometry.vectors import (
     Point,
     Segment,
     LineSegment,
-    ArcSegment,
     Geometry,
     Parcel,
     GeometryLayer,
     Site,
 )
+from backend.geometry.arc import ArcSegment
 
 __all__ = [
     "azimuth_to_bearing",

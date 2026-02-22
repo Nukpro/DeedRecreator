@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+from typing import cast
+
 from flask import request, jsonify, current_app
 
 from backend.geometry import geometry_bp
 from backend.app.container import get_geometry_service
 from backend.geometry.service import GeometryError, GeometryNotFoundError
-from backend.geometry.vectors import Site, ArcSegment, LineSegment
-from backend.services.session_service import SessionNotFoundError
+from backend.geometry.vectors import Site, LineSegment
+from backend.geometry.arc_routes import register_arc_routes
+from backend.services.site_session_service import SiteSessionNotFoundError
+
+register_arc_routes(geometry_bp)
 
 
-@geometry_bp.post("/api/geometry/<int:session_id>/point")
-def add_point(session_id: int):
+@geometry_bp.post("/api/geometry/<int:site_session_id>/point")
+def add_point(site_session_id: int):
     """Add a point to the geometry."""
     try:
         data = request.json or {}
@@ -19,12 +24,12 @@ def add_point(session_id: int):
         attributes = data.get("attributes")
 
         geometry_service = get_geometry_service()
-        result = geometry_service.add_point(session_id, x, y, attributes)
+        result = geometry_service.add_point(site_session_id, x, y, attributes)
 
         if isinstance(result, Site):
             site = result
         else:
-            site = geometry_service.load_current_geometry(session_id, as_site=True)
+            site = cast(Site, geometry_service.load_current_geometry(site_session_id, as_site=True))
 
         points = site.points
         last_point = points[-1].to_frontend_json() if points else None
@@ -36,7 +41,7 @@ def add_point(session_id: int):
         }), 200
     except (ValueError, TypeError) as e:
         return jsonify({"success": False, "message": f"Invalid coordinates: {e}"}), 400
-    except SessionNotFoundError as e:
+    except SiteSessionNotFoundError as e:
         return jsonify({"success": False, "message": str(e)}), 404
     except GeometryError as e:
         return jsonify({"success": False, "message": str(e)}), 400
@@ -47,15 +52,15 @@ def add_point(session_id: int):
         return jsonify({"success": False, "message": f"Internal server error: {str(e)}"}), 500
 
 
-@geometry_bp.get("/api/geometry/<int:session_id>")
-def get_geometry(session_id: int):
+@geometry_bp.get("/api/geometry/<int:site_session_id>")
+def get_geometry(site_session_id: int):
     """Get current geometry state for a session."""
     try:
         geometry_service = get_geometry_service()
-        site = geometry_service.load_current_geometry(session_id, as_site=True)
+        site = cast(Site, geometry_service.load_current_geometry(site_session_id, as_site=True))
 
-        if site.session_id is None:
-            site.session_id = session_id
+        if site.site_session_id is None:
+            site.site_session_id = site_session_id
 
         frontend_json = site.to_frontend_json()
         if 'points' not in frontend_json:
@@ -64,7 +69,7 @@ def get_geometry(session_id: int):
             frontend_json['segments'] = []
 
         return jsonify(frontend_json), 200
-    except SessionNotFoundError as e:
+    except SiteSessionNotFoundError as e:
         return jsonify({"message": str(e)}), 404
     except GeometryError as e:
         return jsonify({"message": str(e)}), 400
@@ -75,8 +80,8 @@ def get_geometry(session_id: int):
         return jsonify({"message": f"Internal server error: {str(e)}"}), 500
 
 
-@geometry_bp.post("/api/geometry/<int:session_id>/save")
-def save_geometry(session_id: int):
+@geometry_bp.post("/api/geometry/<int:site_session_id>/save")
+def save_geometry(site_session_id: int):
     """Save geometry data (full state)."""
     try:
         data = request.json or {}
@@ -85,22 +90,22 @@ def save_geometry(session_id: int):
         action = data.get("action", "modify")
 
         if isinstance(data, dict) and ('collections' in data or 'points' in data or 'segments' in data):
-            data['sessionId'] = session_id
+            data['siteSessionId'] = site_session_id
             site = Site.from_frontend_json(data)
-            result = geometry_service.save_geometry(session_id, site, action)
+            result = geometry_service.save_geometry(site_session_id, site, action)
         else:
-            result = geometry_service.save_geometry(session_id, data, action)
+            result = geometry_service.save_geometry(site_session_id, data, action)
 
         if isinstance(result, Site):
             site = result
         else:
-            site = geometry_service.load_current_geometry(session_id, as_site=True)
+            site = cast(Site, geometry_service.load_current_geometry(site_session_id, as_site=True))
 
         return jsonify({
             "success": True,
             "version": site.version
         }), 200
-    except SessionNotFoundError as e:
+    except SiteSessionNotFoundError as e:
         return jsonify({"success": False, "message": str(e)}), 404
     except GeometryError as e:
         return jsonify({"success": False, "message": str(e)}), 400
@@ -109,12 +114,12 @@ def save_geometry(session_id: int):
         return jsonify({"success": False, "message": "Internal server error"}), 500
 
 
-@geometry_bp.put("/api/geometry/<int:session_id>/point/<point_id>")
-def update_point(session_id: int, point_id: str):
+@geometry_bp.put("/api/geometry/<int:site_session_id>/point/<point_id>")
+def update_point(site_session_id: int, point_id: str):
     """Update a point in the geometry."""
     try:
         data = request.json or {}
-        current_app.logger.info(f"Updating point {point_id} in session {session_id} with data: {data}")
+        current_app.logger.info(f"Updating point {point_id} in site session {site_session_id} with data: {data}")
 
         x = data.get("x")
         y = data.get("y")
@@ -141,13 +146,13 @@ def update_point(session_id: int, point_id: str):
                 return jsonify({"success": False, "message": f"Invalid y coordinate: {y}"}), 400
 
         result = geometry_service.update_point(
-            session_id, point_id, x=x_float, y=y_float, layer=layer, attributes=attributes
+            site_session_id, point_id, x=x_float, y=y_float, layer=layer, attributes=attributes
         )
 
         if isinstance(result, Site):
             site = result
         else:
-            site = geometry_service.load_current_geometry(session_id, as_site=True)
+            site = cast(Site, geometry_service.load_current_geometry(site_session_id, as_site=True))
 
         current_app.logger.info(f"Point {point_id} updated successfully, new version: {site.version}")
 
@@ -157,7 +162,7 @@ def update_point(session_id: int, point_id: str):
         }), 200
     except (ValueError, TypeError) as e:
         return jsonify({"success": False, "message": f"Invalid data: {e}"}), 400
-    except SessionNotFoundError as e:
+    except SiteSessionNotFoundError as e:
         return jsonify({"success": False, "message": str(e)}), 404
     except GeometryNotFoundError as e:
         return jsonify({"success": False, "message": str(e)}), 404
@@ -168,8 +173,8 @@ def update_point(session_id: int, point_id: str):
         return jsonify({"success": False, "message": "Internal server error"}), 500
 
 
-@geometry_bp.post("/api/geometry/<int:session_id>/segment")
-def add_segment(session_id: int):
+@geometry_bp.post("/api/geometry/<int:site_session_id>/segment")
+def add_segment(site_session_id: int):
     """Add a line segment to the geometry."""
     try:
         data = request.json or {}
@@ -182,13 +187,13 @@ def add_segment(session_id: int):
         geometry_service = get_geometry_service()
         segment_type = data.get("segmentType", "line")
         result = geometry_service.add_segment(
-            session_id, start_x, start_y, end_x, end_y, attributes, segment_type=segment_type
+            site_session_id, start_x, start_y, end_x, end_y, attributes, segment_type=segment_type
         )
 
         if isinstance(result, Site):
             site = result
         else:
-            site = geometry_service.load_current_geometry(session_id, as_site=True)
+            site = cast(Site, geometry_service.load_current_geometry(site_session_id, as_site=True))
 
         segments = site.get_all_segments()
         last_segment = segments[-1].to_frontend_json() if segments else None
@@ -200,7 +205,7 @@ def add_segment(session_id: int):
         }), 200
     except (ValueError, TypeError) as e:
         return jsonify({"success": False, "message": f"Invalid coordinates: {e}"}), 400
-    except SessionNotFoundError as e:
+    except SiteSessionNotFoundError as e:
         return jsonify({"success": False, "message": str(e)}), 404
     except GeometryError as e:
         return jsonify({"success": False, "message": str(e)}), 400
@@ -211,225 +216,12 @@ def add_segment(session_id: int):
         return jsonify({"success": False, "message": f"Internal server error: {str(e)}"}), 500
 
 
-@geometry_bp.post("/api/geometry/<int:session_id>/arc/from-three-points")
-def add_arc_from_three_points(session_id: int):
-    """Create an arc from three points (pt1, pt2 on arc, pt3)."""
-    try:
-        data = request.json or {}
-        pt1 = data.get("pt1")
-        pt2 = data.get("pt2")
-        pt3 = data.get("pt3")
-        attributes = data.get("attributes")
-        if not pt1 or not pt2 or not pt3:
-            return jsonify({"success": False, "message": "pt1, pt2, and pt3 are required"}), 400
-        try:
-            arc = ArcSegment.create_from_three_points(
-                pt1={"x": float(pt1.get("x", 0)), "y": float(pt1.get("y", 0))},
-                pt2={"x": float(pt2.get("x", 0)), "y": float(pt2.get("y", 0))},
-                pt3={"x": float(pt3.get("x", 0)), "y": float(pt3.get("y", 0))},
-                attributes=attributes or {}
-            )
-        except ValueError as e:
-            return jsonify({"success": False, "message": str(e)}), 400
-        geometry_service = get_geometry_service()
-        site = geometry_service.add_arc(session_id, arc, attributes)
-        segments = site.get_all_segments()
-        last_segment = segments[-1].to_frontend_json() if segments else None
-        return jsonify({
-            "success": True,
-            "version": site.version,
-            "arc": last_segment
-        }), 200
-    except SessionNotFoundError as e:
-        return jsonify({"success": False, "message": str(e)}), 404
-    except GeometryError as e:
-        return jsonify({"success": False, "message": str(e)}), 400
-    except Exception as e:
-        current_app.logger.error(f"Error adding arc from three points: {e}", exc_info=True)
-        return jsonify({"success": False, "message": f"Internal server error: {str(e)}"}), 500
-
-
-@geometry_bp.post("/api/geometry/<int:session_id>/arc/from-tangent")
-def add_arc_from_tangent(session_id: int):
-    """Create an arc from start point, tangent direction (azimuth), radius, and length or angle."""
-    try:
-        data = request.json or {}
-        start_point = data.get("startPoint")
-        tangent_direction = data.get("tangentDirection")
-        radius = data.get("radius")
-        length = data.get("length")
-        angle = data.get("angle")
-        rotation = data.get("rotation", "cw")
-        attributes = data.get("attributes")
-        if not start_point:
-            return jsonify({"success": False, "message": "startPoint is required"}), 400
-        if tangent_direction is None:
-            return jsonify({"success": False, "message": "tangentDirection is required"}), 400
-        if radius is None:
-            return jsonify({"success": False, "message": "radius is required"}), 400
-        if (length is None) == (angle is None):
-            return jsonify({"success": False, "message": "Exactly one of length or angle must be provided"}), 400
-        try:
-            sp = {"x": float(start_point.get("x", 0)), "y": float(start_point.get("y", 0))}
-            td = float(tangent_direction)
-            r = float(radius)
-            length_val = float(length) if length is not None else None
-            angle_val = float(angle) if angle is not None else None
-            arc = ArcSegment.create_from_tangent(
-                start_point=sp,
-                tangent_direction=td,
-                radius=r,
-                length=length_val,
-                angle=angle_val,
-                rotation=rotation,
-                attributes=attributes or {}
-            )
-        except ValueError as e:
-            return jsonify({"success": False, "message": str(e)}), 400
-        geometry_service = get_geometry_service()
-        site = geometry_service.add_arc(session_id, arc, attributes)
-        segments = site.get_all_segments()
-        last_segment = segments[-1].to_frontend_json() if segments else None
-        return jsonify({
-            "success": True,
-            "version": site.version,
-            "arc": last_segment
-        }), 200
-    except SessionNotFoundError as e:
-        return jsonify({"success": False, "message": str(e)}), 404
-    except GeometryError as e:
-        return jsonify({"success": False, "message": str(e)}), 400
-    except Exception as e:
-        current_app.logger.error(f"Error adding arc from tangent: {e}", exc_info=True)
-        return jsonify({"success": False, "message": f"Internal server error: {str(e)}"}), 500
-
-
-@geometry_bp.post("/api/geometry/<int:session_id>/arc/from-bearing-to-center")
-def add_arc_from_bearing_to_center(session_id: int):
-    """Create an arc from start point, quadrant, bearing to center, radius, and length or angle."""
-    try:
-        data = request.json or {}
-        start_point = data.get("startPoint")
-        quadrant = data.get("quadrant")
-        bearing = data.get("bearing")
-        radius = data.get("radius")
-        length = data.get("length")
-        angle = data.get("angle")
-        rotation = data.get("rotation", "cw")
-        attributes = data.get("attributes")
-        if not start_point:
-            return jsonify({"success": False, "message": "startPoint is required"}), 400
-        if not quadrant:
-            return jsonify({"success": False, "message": "quadrant is required"}), 400
-        if bearing is None:
-            return jsonify({"success": False, "message": "bearing is required"}), 400
-        if radius is None:
-            return jsonify({"success": False, "message": "radius is required"}), 400
-        if (length is None) == (angle is None):
-            return jsonify({"success": False, "message": "Exactly one of length or angle must be provided"}), 400
-        try:
-            sp = {"x": float(start_point.get("x", 0)), "y": float(start_point.get("y", 0))}
-            q = str(quadrant).upper()
-            b = float(bearing)
-            r = float(radius)
-            length_val = float(length) if length is not None else None
-            angle_val = float(angle) if angle is not None else None
-            arc = ArcSegment.create_from_bearing_to_center(
-                start_point=sp,
-                quadrant=q,
-                bearing=b,
-                radius=r,
-                length=length_val,
-                angle=angle_val,
-                rotation=rotation,
-                attributes=attributes or {}
-            )
-        except ValueError as e:
-            return jsonify({"success": False, "message": str(e)}), 400
-        geometry_service = get_geometry_service()
-        site = geometry_service.add_arc(session_id, arc, attributes)
-        segments = site.get_all_segments()
-        last_segment = segments[-1].to_frontend_json() if segments else None
-        return jsonify({
-            "success": True,
-            "version": site.version,
-            "arc": last_segment
-        }), 200
-    except SessionNotFoundError as e:
-        return jsonify({"success": False, "message": str(e)}), 404
-    except GeometryError as e:
-        return jsonify({"success": False, "message": str(e)}), 400
-    except Exception as e:
-        current_app.logger.error(f"Error adding arc from bearing to center: {e}", exc_info=True)
-        return jsonify({"success": False, "message": f"Internal server error: {str(e)}"}), 500
-
-
-@geometry_bp.put("/api/geometry/<int:session_id>/arc/<arc_id>/recalculate")
-def recalculate_arc(session_id: int, arc_id: str):
-    """Recalculate an arc segment using bearing-to-center parameters."""
-    try:
-        data = request.json or {}
-        start_point = data.get("startPoint")
-        quadrant = data.get("quadrant")
-        bearing = data.get("bearing")
-        radius = data.get("radius")
-        length = data.get("length")
-        angle = data.get("angle")
-        rotation = data.get("rotation", "cw")
-        if not start_point:
-            return jsonify({"success": False, "message": "startPoint is required"}), 400
-        if not quadrant:
-            return jsonify({"success": False, "message": "quadrant is required"}), 400
-        if bearing is None:
-            return jsonify({"success": False, "message": "bearing is required"}), 400
-        if radius is None:
-            return jsonify({"success": False, "message": "radius is required"}), 400
-        if (length is None) == (angle is None):
-            return jsonify({"success": False, "message": "Exactly one of length or angle must be provided"}), 400
-        try:
-            sp = {"x": float(start_point.get("x", 0)), "y": float(start_point.get("y", 0))}
-            q = str(quadrant).upper()
-            b = float(bearing)
-            r = float(radius)
-            length_val = float(length) if length is not None else None
-            angle_val = float(angle) if angle is not None else None
-        except (ValueError, TypeError) as e:
-            return jsonify({"success": False, "message": f"Invalid numbers: {e}"}), 400
-        geometry_service = get_geometry_service()
-        site = geometry_service.recalculate_arc(
-            session_id,
-            arc_id,
-            start_point=sp,
-            quadrant=q,
-            bearing=b,
-            radius=r,
-            length=length_val,
-            angle=angle_val,
-            rotation=rotation
-        )
-        return jsonify({
-            "success": True,
-            "version": site.version
-        }), 200
-    except ValueError as e:
-        return jsonify({"success": False, "message": str(e)}), 400
-    except SessionNotFoundError as e:
-        return jsonify({"success": False, "message": str(e)}), 404
-    except GeometryNotFoundError as e:
-        return jsonify({"success": False, "message": str(e)}), 404
-    except GeometryError as e:
-        return jsonify({"success": False, "message": str(e)}), 400
-    except Exception as e:
-        current_app.logger.error(f"Error recalculating arc: {e}", exc_info=True)
-        return jsonify({"success": False, "message": f"Internal server error: {str(e)}"}), 500
-
-
-@geometry_bp.put("/api/geometry/<int:session_id>/segment/<segment_id>")
-def update_segment(session_id: int, segment_id: str):
+@geometry_bp.put("/api/geometry/<int:site_session_id>/segment/<segment_id>")
+def update_segment(site_session_id: int, segment_id: str):
     """Update a segment in the geometry."""
     try:
         data = request.json or {}
-        current_app.logger.info(f"Updating segment {segment_id} in session {session_id} with data: {data}")
+        current_app.logger.info(f"Updating segment {segment_id} in site session {site_session_id} with data: {data}")
 
         start_x = data.get("startX")
         start_y = data.get("startY")
@@ -452,7 +244,7 @@ def update_segment(session_id: int, segment_id: str):
             return jsonify({"success": False, "message": f"Invalid coordinates: {e}"}), 400
 
         result = geometry_service.update_segment(
-            session_id,
+            site_session_id,
             segment_id,
             start_x=start_x_float,
             start_y=start_y_float,
@@ -465,7 +257,7 @@ def update_segment(session_id: int, segment_id: str):
         if isinstance(result, Site):
             site = result
         else:
-            site = geometry_service.load_current_geometry(session_id, as_site=True)
+            site = cast(Site, geometry_service.load_current_geometry(site_session_id, as_site=True))
 
         current_app.logger.info(f"Segment {segment_id} updated successfully, new version: {site.version}")
 
@@ -475,7 +267,7 @@ def update_segment(session_id: int, segment_id: str):
         }), 200
     except (ValueError, TypeError) as e:
         return jsonify({"success": False, "message": f"Invalid data: {e}"}), 400
-    except SessionNotFoundError as e:
+    except SiteSessionNotFoundError as e:
         return jsonify({"success": False, "message": str(e)}), 404
     except GeometryNotFoundError as e:
         return jsonify({"success": False, "message": str(e)}), 404
@@ -486,12 +278,12 @@ def update_segment(session_id: int, segment_id: str):
         return jsonify({"success": False, "message": "Internal server error"}), 500
 
 
-@geometry_bp.put("/api/geometry/<int:session_id>/segment/<segment_id>/recalculate")
-def recalculate_segment(session_id: int, segment_id: str):
+@geometry_bp.put("/api/geometry/<int:site_session_id>/segment/<segment_id>/recalculate")
+def recalculate_segment(site_session_id: int, segment_id: str):
     """Recalculate a line segment using bearing and distance."""
     try:
         data = request.json or {}
-        current_app.logger.info(f"Recalculating segment {segment_id} in session {session_id} with data: {data}")
+        current_app.logger.info(f"Recalculating segment {segment_id} in site session {site_session_id} with data: {data}")
 
         quadrant = data.get("quadrant")
         bearing = data.get("bearing")
@@ -526,7 +318,7 @@ def recalculate_segment(session_id: int, segment_id: str):
             return jsonify({"success": False, "message": f"blockedPoint must be 'start_pt' or 'end_pt', got {blocked_point}"}), 400
 
         geometry_service = get_geometry_service()
-        site = geometry_service.load_current_geometry(session_id, as_site=True)
+        site = cast(Site, geometry_service.load_current_geometry(site_session_id, as_site=True))
         segment = site.get_segment_by_id(segment_id)
         if not segment:
             return jsonify({"success": False, "message": f"Segment with id {segment_id} not found"}), 404
@@ -541,11 +333,11 @@ def recalculate_segment(session_id: int, segment_id: str):
             blocked_point=blocked_point
         )
 
-        result = geometry_service.save_geometry(session_id, site, action="recalculate_segment")
+        result = geometry_service.save_geometry(site_session_id, site, action="recalculate_segment")
         if isinstance(result, Site):
             site = result
         else:
-            site = geometry_service.load_current_geometry(session_id, as_site=True)
+            site = cast(Site, geometry_service.load_current_geometry(site_session_id, as_site=True))
 
         current_app.logger.info(f"Segment {segment_id} recalculated successfully, new version: {site.version}")
 
@@ -555,7 +347,7 @@ def recalculate_segment(session_id: int, segment_id: str):
         }), 200
     except ValueError as e:
         return jsonify({"success": False, "message": str(e)}), 400
-    except SessionNotFoundError as e:
+    except SiteSessionNotFoundError as e:
         return jsonify({"success": False, "message": str(e)}), 404
     except GeometryNotFoundError as e:
         return jsonify({"success": False, "message": str(e)}), 404
@@ -568,37 +360,37 @@ def recalculate_segment(session_id: int, segment_id: str):
         return jsonify({"success": False, "message": error_msg}), 500
 
 
-@geometry_bp.post("/api/geometry/<int:session_id>/undo")
-def undo_action(session_id: int):
+@geometry_bp.post("/api/geometry/<int:site_session_id>/undo")
+def undo_action(site_session_id: int):
     """Undo last action."""
     try:
         geometry_service = get_geometry_service()
-        result = geometry_service.undo(session_id, as_site=False)
+        result = geometry_service.undo(site_session_id, as_site=False)
         version = result.get("version", 0) if isinstance(result, dict) else result.version
         return jsonify({
             "success": True,
             "version": version
         }), 200
-    except GeometryError as e:
-        return jsonify({"success": False, "message": str(e)}), 400
     except GeometryNotFoundError as e:
         return jsonify({"success": False, "message": str(e)}), 404
+    except GeometryError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
     except Exception as e:
         current_app.logger.error(f"Error undoing action: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Internal server error"}), 500
 
 
-@geometry_bp.delete("/api/geometry/<int:session_id>/<object_type>/<object_id>")
-def delete_object(session_id: int, object_type: str, object_id: str):
+@geometry_bp.delete("/api/geometry/<int:site_session_id>/<object_type>/<object_id>")
+def delete_object(site_session_id: int, object_type: str, object_id: str):
     """Delete an object (point, segment, parcel, layer) from the geometry."""
     try:
         geometry_service = get_geometry_service()
-        result = geometry_service.delete_object(session_id, object_type, object_id)
+        result = geometry_service.delete_object(site_session_id, object_type, object_id)
 
         if isinstance(result, Site):
             site = result
         else:
-            site = geometry_service.load_current_geometry(session_id, as_site=True)
+            site = cast(Site, geometry_service.load_current_geometry(site_session_id, as_site=True))
 
         current_app.logger.info(f"Object {object_type}/{object_id} deleted successfully, new version: {site.version}")
 
@@ -608,7 +400,7 @@ def delete_object(session_id: int, object_type: str, object_id: str):
         }), 200
     except (ValueError, TypeError) as e:
         return jsonify({"success": False, "message": f"Invalid data: {e}"}), 400
-    except SessionNotFoundError as e:
+    except SiteSessionNotFoundError as e:
         return jsonify({"success": False, "message": str(e)}), 404
     except GeometryNotFoundError as e:
         return jsonify({"success": False, "message": str(e)}), 404

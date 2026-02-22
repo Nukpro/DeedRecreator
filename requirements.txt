@@ -1,0 +1,8 @@
+# Core
+Flask>=2.0
+
+# Vector geometry (primary backend for DXF read/write)
+ezdxf>=1.0
+
+# Image/PDF (existing)
+Pillow>=9.0

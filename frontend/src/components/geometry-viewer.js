@@ -3,6 +3,13 @@
  * Responsible for rendering parcel geometries and raster overlays.
  */
 
+import {
+  getArcMidPoint,
+  calculateArcFromThreePoints,
+  getArcTangentAzimuthAtPoint,
+  isPointOnArc
+} from "../utils/arc-utils.js";
+
 export default class GeometryViewer {
   constructor(containerId, options = {}) {
     this.container = document.getElementById(containerId);
@@ -68,7 +75,14 @@ export default class GeometryViewer {
     this.arcPoints = []; // [pt1, pt2, pt3] for 3-point arc creation
     this.drawingArc = false;
     this.onArcThreePointsClick = null; // Callback(pt1, pt2, pt3) when arc is created from 3 points
+    this.onArcTanRadiusClick = null; // Callback(pt1, tangentDegreesOrNull) for arc by tangent & radius
     this._arcCancelHandler = null; // ESC key handler for canceling arc drawing
+
+    // Arc point editing (4 points: start, mid, end, center)
+    this.editingArcPoint = null; // { segmentId, pointType: "start"|"mid"|"end"|"center", originalSegment }
+    this.onArcPointUpdate = null; // Callback(segmentId, pointType, newX, newY) when arc point edit is confirmed
+    this.onArcPointEditStart = null;
+    this._arcPointEditCancelHandler = null;
     
     // Snap (magnet) state (Task 5)
     this.snappedTarget = null; // Current snapped target for visual feedback
@@ -349,7 +363,7 @@ export default class GeometryViewer {
       }
     }
 
-    // Render segments if they exist in data (preferred for session-based geometry)
+    // Render segments if they exist in data (preferred for site-session-based geometry)
     // Only render collections if segments are not present (for backward compatibility)
     if (this.data && this.data.segments && Array.isArray(this.data.segments) && this.data.segments.length > 0) {
       // Render segments directly - skip collections to avoid duplicate rendering
@@ -444,6 +458,22 @@ export default class GeometryViewer {
             this.ctx.strokeStyle = "#ffff00";
             this.ctx.lineWidth = style.lineWidth + 4;
             this.ctx.stroke();
+            // Draw 4 points: start, mid, end, center (mid = middle of arc by angle)
+            const mid = getArcMidPoint(segment);
+            const midCanvas = mid ? this.worldToCanvas(mid.x, mid.y) : null;
+            const arcHandles = midCanvas
+              ? [startCanvas, midCanvas, endCanvas, centerCanvas]
+              : [startCanvas, endCanvas, centerCanvas];
+            const centerColor = "#ff9900";
+            arcHandles.forEach((pt, i) => {
+              this.ctx.fillStyle = i === arcHandles.length - 1 ? centerColor : "#0066ff";
+              this.ctx.beginPath();
+              this.ctx.arc(pt.x, pt.y, 6, 0, 2 * Math.PI);
+              this.ctx.fill();
+              this.ctx.strokeStyle = "#ffffff";
+              this.ctx.lineWidth = 2;
+              this.ctx.stroke();
+            });
           }
           this.ctx.beginPath();
           this.ctx.arc(centerCanvas.x, centerCanvas.y, radiusCanvas, startAngle, endAngle, counterclockwise);
@@ -531,7 +561,7 @@ export default class GeometryViewer {
       } else if (this.arcPoints.length === 2 && this.currentMousePosition) {
         const pt2 = this.arcPoints[1];
         const pt3 = this.currentMousePosition;
-        const arcData = this.calculateArcFromThreePoints(pt1, pt2, pt3);
+        const arcData = calculateArcFromThreePoints(pt1, pt2, pt3);
         if (arcData) {
           const centerCanvas = this.worldToCanvas(arcData.center.x, arcData.center.y);
           const startCanvas = this.worldToCanvas(arcData.start.x, arcData.start.y);
@@ -550,6 +580,71 @@ export default class GeometryViewer {
       }
     }
     
+    // Arc point edit preview: show arc from three points or moved center
+    if (this.editingArcPoint && this.currentMousePosition && this.editingArcPoint.originalSegment) {
+      const { segmentId, pointType, originalSegment } = this.editingArcPoint;
+      const seg = originalSegment;
+      const mx = this.currentMousePosition.x;
+      const my = this.currentMousePosition.y;
+      if (pointType === "center") {
+        const cx = seg.center.x, cy = seg.center.y, r = seg.radius;
+        const startPt = seg.start || { x: seg.startX, y: seg.startY };
+        const endPt = seg.end || { x: seg.endX, y: seg.endY };
+        const shiftX = mx - cx, shiftY = my - cy;
+        const startX = startPt.x + shiftX, startY = startPt.y + shiftY;
+        const endX = endPt.x + shiftX, endY = endPt.y + shiftY;
+        const sc = this.worldToCanvas(startX, startY);
+        const ec = this.worldToCanvas(endX, endY);
+        const cc = this.worldToCanvas(mx, my);
+        const rCanvas = r * this.scale;
+        const sa = Math.atan2(sc.y - cc.y, sc.x - cc.x);
+        const ea = Math.atan2(ec.y - cc.y, ec.x - cc.x);
+        const rot = seg.rotation || seg.rot || "cw";
+        this.ctx.beginPath();
+        this.ctx.arc(cc.x, cc.y, rCanvas, sa, ea, rot === "ccw");
+        this.ctx.strokeStyle = "#0000ff";
+        this.ctx.lineWidth = 2;
+        this.ctx.setLineDash([5, 5]);
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+      } else {
+        let pt1, pt2, pt3;
+        const start = seg.start || { x: seg.startX, y: seg.startY };
+        const end = seg.end || { x: seg.endX, y: seg.endY };
+        const mid = getArcMidPoint(seg);
+        if (!mid) return;
+        if (pointType === "start") {
+          pt1 = { x: mx, y: my };
+          pt2 = mid;
+          pt3 = end;
+        } else if (pointType === "mid") {
+          pt1 = start;
+          pt2 = { x: mx, y: my };
+          pt3 = end;
+        } else {
+          pt1 = start;
+          pt2 = mid;
+          pt3 = { x: mx, y: my };
+        }
+        const arcData = calculateArcFromThreePoints(pt1, pt2, pt3);
+        if (arcData) {
+          const centerCanvas = this.worldToCanvas(arcData.center.x, arcData.center.y);
+          const startCanvas = this.worldToCanvas(arcData.start.x, arcData.start.y);
+          const endCanvas = this.worldToCanvas(arcData.end.x, arcData.end.y);
+          const radiusCanvas = arcData.radius * this.scale;
+          const startAngle = Math.atan2(startCanvas.y - centerCanvas.y, startCanvas.x - centerCanvas.x);
+          const endAngle = Math.atan2(endCanvas.y - centerCanvas.y, endCanvas.x - centerCanvas.x);
+          this.ctx.beginPath();
+          this.ctx.arc(centerCanvas.x, centerCanvas.y, radiusCanvas, startAngle, endAngle, arcData.rotation === "ccw");
+          this.ctx.strokeStyle = "#0000ff";
+          this.ctx.lineWidth = 2;
+          this.ctx.setLineDash([5, 5]);
+          this.ctx.stroke();
+          this.ctx.setLineDash([]);
+        }
+      }
+    }
+
     // Task 3.2.2-3.2.3: Render tracking line and original line when editing line point
     if (this.editingLinePoint && this.currentMousePosition) {
       const { originalSegment, pointType } = this.editingLinePoint;
@@ -811,9 +906,9 @@ export default class GeometryViewer {
         (this.drawingMode === "points" || 
          this.drawingMode === "segments" || 
          this.drawingMode === "arcs-three-points" ||
-         this.drawingMode === "arcs-tangent" ||
-         this.drawingMode === "arcs-bearing-to-center" ||
+         this.drawingMode === "arcs-tan-radius" ||
          this.editingLinePoint || 
+         this.editingArcPoint ||
          this.editingPoint)) {
       const snapTarget = this.findNearestSnapTarget(worldPoint.x, worldPoint.y, canvasX, canvasY);
       if (snapTarget) {
@@ -824,13 +919,13 @@ export default class GeometryViewer {
     
     // Task 2.2.2: Process of drawing the line should start/end with left mouse button only
     // event.button: 0 = left, 1 = middle, 2 = right
-    if (this.drawingMode === "segments" || this.drawingMode === "points" || this.drawingMode === "arcs-three-points" || this.drawingMode === "arcs-tangent" || this.drawingMode === "arcs-bearing-to-center") {
+    if (this.drawingMode === "segments" || this.drawingMode === "points" || this.drawingMode === "arcs-three-points" || this.drawingMode === "arcs-tan-radius") {
       if (event.button !== 0) {
         // Not left mouse button - ignore
         return;
       }
     }
-    
+
     // If in drawing mode, handle click for drawing
     if (this.drawingMode === "points" && this.onPointClick) {
       event.preventDefault();
@@ -895,30 +990,16 @@ export default class GeometryViewer {
       this.render();
       return;
     }
-    
-    // If in arcs-tangent mode: one click on snapped point -> callback with point + tangent direction (Task 6.2.4.2)
-    if (this.drawingMode === "arcs-tangent" && this.onArcTangentClick) {
+
+    // If in arcs-tan-radius mode: one click → open params (tangent from snap if on object)
+    if (this.drawingMode === "arcs-tan-radius" && this.onArcTanRadiusClick) {
       event.preventDefault();
       event.stopPropagation();
-      const snapTarget = this.options.snapEnabled ? this.findNearestSnapTarget(worldPoint.x, worldPoint.y, canvasX, canvasY) : null;
-      if (snapTarget && (snapTarget.type === "start_pt" || snapTarget.type === "end_pt" || snapTarget.type === "arc_start_pt" || snapTarget.type === "arc_end_pt")) {
-        const tangentDir = this.getTangentDirectionAtPoint(snapTarget);
-        if (tangentDir != null) {
-          this.onArcTangentClick({ x: worldPoint.x, y: worldPoint.y }, tangentDir);
-        } else {
-          console.warn("Could not get tangent direction at point");
-        }
-      } else {
-        console.warn("Snap to a line or arc endpoint to create tangent arc");
-      }
-      return;
-    }
-    
-    // If in arcs-bearing-to-center mode: one click -> callback with point (Task 6.3.5.2)
-    if (this.drawingMode === "arcs-bearing-to-center" && this.onArcBearingToCenterClick) {
-      event.preventDefault();
-      event.stopPropagation();
-      this.onArcBearingToCenterClick({ x: worldPoint.x, y: worldPoint.y });
+      const snapTarget = this.options.snapEnabled
+        ? this.findNearestSnapTarget(worldPoint.x, worldPoint.y, canvasX, canvasY)
+        : null;
+      const tangent = snapTarget ? this.getTangentDirectionAtPoint(snapTarget) : null;
+      this.onArcTanRadiusClick({ x: worldPoint.x, y: worldPoint.y }, tangent);
       return;
     }
     
@@ -969,6 +1050,29 @@ export default class GeometryViewer {
         return;
       }
       
+      // Arc point edit: second click confirms new position
+      if (this.editingArcPoint && event.button === 0) {
+        event.preventDefault();
+        event.stopPropagation();
+        const { segmentId, pointType, originalSegment } = this.editingArcPoint;
+        const newX = worldPoint.x;
+        const newY = worldPoint.y;
+        if (this.onArcPointUpdate) {
+          const result = this.onArcPointUpdate(segmentId, pointType, newX, newY, originalSegment);
+          if (result && typeof result.catch === "function") {
+            result.catch((err) => {
+              console.error("Arc point update failed:", err);
+              if (typeof alert !== "undefined") alert(err.message || String(err));
+            });
+          }
+        }
+        this.editingArcPoint = null;
+        this.currentMousePosition = null;
+        this._removeArcPointEditCancelHandler();
+        this.render();
+        return;
+      }
+
       // Task 3.2: Check if clicking on a line endpoint (if editing line point)
       if (this.editingLinePoint && event.button === 0) {
         // Task 3.2.5: Second left mouse button press - confirm edit
@@ -990,6 +1094,41 @@ export default class GeometryViewer {
         return;
       }
       
+      // Arc: check if clicking on one of 4 points (start, mid, end, center)
+      if (this.selectedObject && this.selectedObject.type === "segment" && this.selectedObject.segmentType === "arc" && event.button === 0) {
+        const clickedArcPoint = this.findArcPointAtPoint(this.selectedObject, worldPoint.x, worldPoint.y, canvasX, canvasY);
+        if (clickedArcPoint) {
+          event.preventDefault();
+          event.stopPropagation();
+          let originalSegment = null;
+          if (this.data && this.data.segments) {
+            originalSegment = this.data.segments.find(s => s.id === this.selectedObject.id);
+          }
+          if (!originalSegment && this.selectedObject.center) {
+            originalSegment = {
+              id: this.selectedObject.id,
+              segmentType: "arc",
+              start: this.selectedObject.start || { x: this.selectedObject.startX, y: this.selectedObject.startY },
+              end: this.selectedObject.end || { x: this.selectedObject.endX, y: this.selectedObject.endY },
+              center: this.selectedObject.center,
+              radius: this.selectedObject.radius,
+              rotation: this.selectedObject.rotation || this.selectedObject.rot,
+              delta: this.selectedObject.delta
+            };
+          }
+          if (this.onArcPointEditStart) this.onArcPointEditStart();
+          this.editingArcPoint = {
+            segmentId: this.selectedObject.id,
+            pointType: clickedArcPoint,
+            originalSegment
+          };
+          this.currentMousePosition = { x: worldPoint.x, y: worldPoint.y };
+          this._attachArcPointEditCancelHandler();
+          this.render();
+          return;
+        }
+      }
+
       // Task 3.2: Check if clicking on a selected segment's endpoint
       if (this.selectedObject && this.selectedObject.type === "segment" && event.button === 0) {
         const clickedEndpoint = this.findLineEndpointAtPoint(this.selectedObject, worldPoint.x, worldPoint.y, canvasX, canvasY);
@@ -1095,7 +1234,7 @@ export default class GeometryViewer {
         return;
       } else {
         // Clear selection if clicking on empty space (unless editing line point or point)
-        if (!this.editingLinePoint && !this.editingPoint) {
+        if (!this.editingLinePoint && !this.editingArcPoint && !this.editingPoint) {
           this.selectedObject = null;
           // Re-render to clear selected state
           this.render();
@@ -1111,6 +1250,23 @@ export default class GeometryViewer {
       y: canvasY
     };
     this.updateCoordDisplay(canvasX, canvasY);
+  }
+
+  findArcPointAtPoint(segment, worldX, worldY, canvasX, canvasY) {
+    if (!segment || segment.segmentType !== "arc" || !segment.center || !segment.start || !segment.end) return null;
+    const clickTolerance = 10;
+    const mid = getArcMidPoint(segment);
+    if (!mid) return null;
+    const startC = this.worldToCanvas(segment.start.x, segment.start.y);
+    const endC = this.worldToCanvas(segment.end.x, segment.end.y);
+    const midC = this.worldToCanvas(mid.x, mid.y);
+    const centerC = this.worldToCanvas(segment.center.x, segment.center.y);
+    const dist = (c, x, y) => Math.sqrt((x - c.x) ** 2 + (y - c.y) ** 2);
+    if (dist(startC, canvasX, canvasY) <= clickTolerance) return "start";
+    if (dist(midC, canvasX, canvasY) <= clickTolerance) return "mid";
+    if (dist(endC, canvasX, canvasY) <= clickTolerance) return "end";
+    if (dist(centerC, canvasX, canvasY) <= clickTolerance) return "center";
+    return null;
   }
 
   findLineEndpointAtPoint(segment, worldX, worldY, canvasX, canvasY) {
@@ -1430,72 +1586,26 @@ export default class GeometryViewer {
     if (!segment) return null;
     
     if (segment.segmentType === "line" && (type === "start_pt" || type === "end_pt")) {
-      const dx = segment.end.x - segment.start.x;
-      const dy = segment.end.y - segment.start.y;
+      const sx = segment.start?.x ?? segment.startX;
+      const sy = segment.start?.y ?? segment.startY;
+      const ex = segment.end?.x ?? segment.endX;
+      const ey = segment.end?.y ?? segment.endY;
+      if (sx == null || sy == null || ex == null || ey == null) return null;
+      // end_pt: tangent = direction start→end (continue line forward)
+      // start_pt: tangent = direction end→start (continue line backward)
+      const dx = type === "end_pt" ? ex - sx : sx - ex;
+      const dy = type === "end_pt" ? ey - sy : sy - ey;
       let angle = Math.atan2(dx, dy);
       let azimuth = (angle * 180 / Math.PI);
       if (azimuth < 0) azimuth += 360;
       return azimuth;
     }
     
-    if (segment.segmentType === "arc" && segment.center && (type === "arc_start_pt" || type === "arc_end_pt")) {
-      const cx = segment.center.x;
-      const cy = segment.center.y;
-      const pt = type === "arc_start_pt" ? segment.start : segment.end;
-      const angleFromCenter = Math.atan2(pt.x - cx, pt.y - cy);
-      const rot = segment.rotation || "cw";
-      const tangentAngle = rot === "cw" ? angleFromCenter - Math.PI / 2 : angleFromCenter + Math.PI / 2;
-      let azimuth = tangentAngle * 180 / Math.PI;
-      if (azimuth < 0) azimuth += 360;
-      if (azimuth >= 360) azimuth -= 360;
-      return azimuth;
+    if (segment.segmentType === "arc" && (type === "arc_start_pt" || type === "arc_end_pt")) {
+      return getArcTangentAzimuthAtPoint(segment, type);
     }
     
     return null;
-  }
-
-  /**
-   * Task 6.1.4.5: Calculate arc parameters from three points (for preview).
-   * Uses the same logic as backend ArcSegment.create_from_three_points.
-   * Returns { center, radius, start, end, rotation } in world coords.
-   * Arc is the circumscribed circle through pt1, pt2, pt3; goes from pt1 to pt3 through pt2.
-   */
-  calculateArcFromThreePoints(pt1, pt2, pt3) {
-    const x1 = pt1.x, y1 = pt1.y, x2 = pt2.x, y2 = pt2.y, x3 = pt3.x, y3 = pt3.y;
-    if ((x1 === x2 && y1 === y2) || (x2 === x3 && y2 === y3) || (x1 === x3 && y1 === y3)) return null;
-
-    // Circumcenter: intersection of perpendicular bisectors of pt1-pt2 and pt2-pt3 (pt2 is used)
-    const m1x = (x1 + x2) / 2, m1y = (y1 + y2) / 2;
-    const v1x = y1 - y2, v1y = x2 - x1;
-    const m2x = (x2 + x3) / 2, m2y = (y2 + y3) / 2;
-    const v2x = y2 - y3, v2y = x3 - x2;
-    const denom = v1x * v2y - v1y * v2x;
-    if (Math.abs(denom) < 1e-12) return null;
-    const t = ((m2x - m1x) * v2y - (m2y - m1y) * v2x) / denom;
-    const cx = m1x + t * v1x, cy = m1y + t * v1y;
-    const radius = Math.sqrt((x1 - cx) ** 2 + (y1 - cy) ** 2);
-    if (!Number.isFinite(radius) || radius <= 0) return null;
-
-    // Same angle convention as backend: North=0, clockwise (atan2(dx, dy))
-    const a1 = Math.atan2(x1 - cx, y1 - cy);
-    const a2 = Math.atan2(x2 - cx, y2 - cy);
-    const a3 = Math.atan2(x3 - cx, y3 - cy);
-    const norm = (a) => { let x = a % (2 * Math.PI); if (x < 0) x += 2 * Math.PI; return x; };
-    const ang1 = norm(a1), ang2 = norm(a2), ang3 = norm(a3);
-
-    // Which arc contains pt2: same logic as backend
-    const dCwSpan = (ang3 - ang1 + 2 * Math.PI) % (2 * Math.PI);
-    const dCcwSpan = (ang1 - ang3 + 2 * Math.PI) % (2 * Math.PI);
-    const a2From1Cw = (ang2 - ang1 + 2 * Math.PI) % (2 * Math.PI);
-    const rotation = (a2From1Cw > 0 && a2From1Cw <= dCwSpan) ? "cw" : "ccw";
-
-    return {
-      center: { x: cx, y: cy },
-      radius,
-      start: { x: x1, y: y1 },
-      end: { x: x3, y: y3 },
-      rotation
-    };
   }
 
   // Task 5.1.4: Find nearest snap target within tolerance
@@ -1553,9 +1663,9 @@ export default class GeometryViewer {
         (this.drawingMode === "points" || 
          this.drawingMode === "segments" || 
          this.drawingMode === "arcs-three-points" ||
-         this.drawingMode === "arcs-tangent" ||
-         this.drawingMode === "arcs-bearing-to-center" ||
+         this.drawingMode === "arcs-tan-radius" ||
          this.editingLinePoint || 
+         this.editingArcPoint ||
          this.editingPoint)) {
       const snapTarget = this.findNearestSnapTarget(worldPoint.x, worldPoint.y, currentX, currentY);
       if (snapTarget) {
@@ -1611,6 +1721,9 @@ export default class GeometryViewer {
         this.currentMousePosition = { x: worldPoint.x, y: worldPoint.y };
         // Re-render to show polygon preview
         this.render();
+      } else if (this.editingArcPoint) {
+        this.currentMousePosition = { x: worldPoint.x, y: worldPoint.y };
+        this.render();
       } else if (this.editingLinePoint) {
         // Task 3.2.2: Update tracking line position during point editing
         this.currentMousePosition = { x: worldPoint.x, y: worldPoint.y };
@@ -1625,8 +1738,10 @@ export default class GeometryViewer {
         this.currentMousePosition = null;
       }
       
-      if (this.drawingMode === "points" || this.drawingMode === "segments" || this.drawingMode === "polygon-select" || this.drawingMode === "arcs-three-points" || this.drawingMode === "arcs-tangent" || this.drawingMode === "arcs-bearing-to-center") {
+      if (this.drawingMode === "points" || this.drawingMode === "segments" || this.drawingMode === "polygon-select" || this.drawingMode === "arcs-three-points" || this.drawingMode === "arcs-tan-radius") {
         // Ensure crosshair cursor is maintained when not panning in drawing modes
+        this.canvas.style.cursor = "crosshair";
+      } else if (this.editingArcPoint) {
         this.canvas.style.cursor = "crosshair";
       } else if (this.hoveredObject) {
         // Show pointer cursor when hovering over an object
@@ -1720,7 +1835,7 @@ export default class GeometryViewer {
   onMouseUp() {
     this.isPanning = false;
     // Keep crosshair cursor if in drawing mode
-    if (this.drawingMode === "points" || this.drawingMode === "segments" || this.drawingMode === "arcs-three-points" || this.drawingMode === "arcs-tangent" || this.drawingMode === "arcs-bearing-to-center") {
+    if (this.drawingMode === "points" || this.drawingMode === "segments" || this.drawingMode === "arcs-three-points" || this.drawingMode === "arcs-tan-radius") {
       this.canvas.style.cursor = "crosshair";
     } else {
       this.canvas.style.cursor = "grab";
@@ -1730,7 +1845,7 @@ export default class GeometryViewer {
   onMouseLeave() {
     this.isPanning = false;
     // Clear preview line when mouse leaves canvas (but keep it for line point editing or point editing)
-    if (!this.editingLinePoint && !this.editingPoint) {
+    if (!this.editingLinePoint && !this.editingArcPoint && !this.editingPoint) {
       this.currentMousePosition = null;
     }
     // Clear hover state when mouse leaves canvas
@@ -1739,7 +1854,7 @@ export default class GeometryViewer {
       this.render();
     }
     // Keep crosshair cursor if in drawing mode
-    if (this.drawingMode === "points" || this.drawingMode === "segments" || this.drawingMode === "arcs-three-points" || this.drawingMode === "arcs-tangent" || this.drawingMode === "arcs-bearing-to-center") {
+    if (this.drawingMode === "points" || this.drawingMode === "segments" || this.drawingMode === "arcs-three-points" || this.drawingMode === "arcs-tan-radius") {
       this.canvas.style.cursor = "crosshair";
     } else {
       this.canvas.style.cursor = "grab";
@@ -1803,7 +1918,7 @@ export default class GeometryViewer {
   onTouchEnd() {
     this.isPanning = false;
     // Keep crosshair cursor if in drawing mode
-    if (this.drawingMode === "points" || this.drawingMode === "segments" || this.drawingMode === "arcs-three-points" || this.drawingMode === "arcs-tangent" || this.drawingMode === "arcs-bearing-to-center") {
+    if (this.drawingMode === "points" || this.drawingMode === "segments" || this.drawingMode === "arcs-three-points" || this.drawingMode === "arcs-tan-radius") {
       this.canvas.style.cursor = "crosshair";
     } else {
       this.canvas.style.cursor = "grab";
@@ -1997,15 +2112,16 @@ export default class GeometryViewer {
       this.segmentStartPoint = null;
       this._removeSegmentCancelHandler();
     }
-    if (mode !== "arcs-three-points" && mode !== "arcs-tangent" && mode !== "arcs-bearing-to-center") {
+    if (mode !== "arcs-three-points") {
       this.arcPoints = [];
       this.drawingArc = false;
       this._removeArcCancelHandler();
       this.onArcThreePointsClick = null;
-      this.onArcTangentClick = null;
-      this.onArcBearingToCenterClick = null;
     }
-    if (mode !== "segments" && mode !== "polygon-select" && mode !== "arcs-three-points") {
+    if (mode !== "arcs-tan-radius") {
+      this.onArcTanRadiusClick = null;
+    }
+    if (mode !== "segments" && mode !== "polygon-select" && mode !== "arcs-three-points" && mode !== "arcs-tan-radius") {
       this.currentMousePosition = null;
     }
     
@@ -2026,20 +2142,21 @@ export default class GeometryViewer {
       console.log("setDrawingMode: segments mode set, onSegmentClick:", typeof this.onSegmentClick, this.onSegmentClick);
     } else if (mode === "arcs-three-points") {
       this.onArcThreePointsClick = callback;
-    } else if (mode === "arcs-tangent") {
-      this.onArcTangentClick = callback;
-    } else if (mode === "arcs-bearing-to-center") {
-      this.onArcBearingToCenterClick = callback;
+    } else if (mode === "arcs-tan-radius") {
+      this.onPointClick = null;
+      this.onSegmentClick = null;
+      this.onArcTanRadiusClick = callback;
     } else {
       this.onPointClick = null;
       this.onSegmentClick = null;
+      this.onArcTanRadiusClick = null;
       if (mode !== "polygon-select") {
         this.onPolygonSelect = null;
       }
     }
     
     // Update cursor based on mode
-    if (mode === "points" || mode === "segments" || mode === "polygon-select" || mode === "arcs-three-points" || mode === "arcs-tangent" || mode === "arcs-bearing-to-center") {
+    if (mode === "points" || mode === "segments" || mode === "polygon-select" || mode === "arcs-three-points" || mode === "arcs-tan-radius") {
       this.canvas.style.cursor = "crosshair";
     } else if (mode === null) {
       this.canvas.style.cursor = "grab";
@@ -2084,6 +2201,28 @@ export default class GeometryViewer {
     if (this._linePointEditCancelHandler) {
       document.removeEventListener("keydown", this._linePointEditCancelHandler);
       this._linePointEditCancelHandler = null;
+    }
+  }
+
+  _attachArcPointEditCancelHandler() {
+    if (this._arcPointEditCancelHandler) return;
+    this._arcPointEditCancelHandler = (event) => {
+      if (event.key === "Escape" && this.editingArcPoint) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.editingArcPoint = null;
+        this.currentMousePosition = null;
+        this._removeArcPointEditCancelHandler();
+        this.render();
+      }
+    };
+    document.addEventListener("keydown", this._arcPointEditCancelHandler);
+  }
+
+  _removeArcPointEditCancelHandler() {
+    if (this._arcPointEditCancelHandler) {
+      document.removeEventListener("keydown", this._arcPointEditCancelHandler);
+      this._arcPointEditCancelHandler = null;
     }
   }
   

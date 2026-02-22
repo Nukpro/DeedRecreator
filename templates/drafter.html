@@ -218,21 +218,19 @@
 
 {% block extra_scripts %}
     <script type="module" src="{{ url_for('static', filename='dist/drafter.js') }}"></script>
-    {% if session_data %}
-    <script type="application/json" id="session-data-json">{{ session_data|tojson|safe }}</script>
+    {% if site_session_data %}
+    <script type="application/json" id="site-session-data-json">{{ site_session_data|tojson|safe }}</script>
     <script>
-        // Pass session data to drafter
-        const sessionDataScript = document.getElementById('session-data-json');
-        window.sessionData = sessionDataScript ? JSON.parse(sessionDataScript.textContent) : null;
-        
-        // Load processed drawing if available
-        if (window.sessionData && window.sessionData.paths) {
-            console.log('Session activated:', {
-                sessionId: window.sessionData.id,
-                processedDrawing: window.sessionData.paths.processed_drawing,
-                processedDrawingUrl: window.sessionData.paths.processed_drawing_url,
-                geometryStorage: window.sessionData.paths.geometry_storage,
-                sessionDir: window.sessionData.paths.session_dir
+        const siteSessionDataScript = document.getElementById('site-session-data-json');
+        window.siteSessionData = siteSessionDataScript ? JSON.parse(siteSessionDataScript.textContent) : null;
+
+        if (window.siteSessionData && window.siteSessionData.paths) {
+            console.log('Site session activated:', {
+                siteSessionId: window.siteSessionData.id,
+                processedDrawing: window.siteSessionData.paths.processed_drawing,
+                processedDrawingUrl: window.siteSessionData.paths.processed_drawing_url,
+                geometryStorage: window.siteSessionData.paths.geometry_storage,
+                siteSessionDir: window.siteSessionData.paths.site_session_dir
             });
         }
     </script>

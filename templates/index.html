@@ -4,11 +4,11 @@
 
 {% block extra_head %}
     <style>
-        .sessions-container {
+        .site-sessions-container {
             margin-top: 2rem;
         }
 
-        .sessions-table {
+        .site-sessions-table {
             width: 100%;
             border-collapse: collapse;
             background-color: #ffffff;
@@ -17,12 +17,12 @@
             overflow: hidden;
         }
 
-        .sessions-table thead {
+        .site-sessions-table thead {
             background-color: #1f2933;
             color: #ffffff;
         }
 
-        .sessions-table th {
+        .site-sessions-table th {
             padding: 1rem;
             text-align: left;
             font-weight: 600;
@@ -31,16 +31,16 @@
             letter-spacing: 0.5px;
         }
 
-        .sessions-table td {
+        .site-sessions-table td {
             padding: 1rem;
             border-bottom: 1px solid #e5e7eb;
         }
 
-        .sessions-table tbody tr:hover {
+        .site-sessions-table tbody tr:hover {
             background-color: #f9fafb;
         }
 
-        .sessions-table tbody tr:last-child td {
+        .site-sessions-table tbody tr:last-child td {
             border-bottom: none;
         }
 
@@ -74,7 +74,7 @@
             white-space: nowrap;
         }
 
-        .no-sessions {
+        .no-site-sessions {
             text-align: center;
             padding: 2rem;
             color: #6b7280;
@@ -85,7 +85,7 @@
             color: #6b7280;
         }
 
-        .sessions-table tbody tr {
+        .site-sessions-table tbody tr {
             cursor: pointer;
         }
 
@@ -237,60 +237,60 @@
 {% block content %}
     <h1>Welcome to Deed Recreator</h1>
     <p>This workspace will help you recreate deeds and manage project geometry.</p>
-    <p><a href="{{ url_for('pages.create_session') }}">Create new session</a> to start working with the drafter workspace.</p>
+    <p><a href="{{ url_for('pages.create_session') }}">Create new site session</a> to start working with the drafter workspace.</p>
 
-    <div class="sessions-container">
-        <h2>Sessions</h2>
-        {% if sessions %}
-            <table class="sessions-table">
+    <div class="site-sessions-container">
+        <h2>Site Sessions</h2>
+        {% if site_sessions %}
+            <table class="site-sessions-table">
                 <thead>
                     <tr>
                         <th>ID</th>
-                        <th>Session Name</th>
-                        <th>Session Status</th>
+                        <th>Site Session Name</th>
+                        <th>Site Session Status</th>
                         <th>User Comment</th>
                         <th>Creation Time</th>
                         <th>Update Time</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for session in sessions %}
-                        <tr data-session-id="{{ session.id }}">
-                            <td>{{ session.id }}</td>
-                            <td>{{ session.session_name }}</td>
+                    {% for site_session in site_sessions %}
+                        <tr data-site-session-id="{{ site_session.id }}">
+                            <td>{{ site_session.id }}</td>
+                            <td>{{ site_session.site_session_name }}</td>
                             <td>
-                                <span class="status-badge {{ session.session_status or 'stage' }}">
-                                    {{ session.session_status or 'stage' }}
+                                <span class="status-badge {{ site_session.site_session_status or 'stage' }}">
+                                    {{ site_session.site_session_status or 'stage' }}
                                 </span>
                             </td>
-                            <td class="user-comment" title="{{ session.user_comment or '' }}">
-                                {{ session.user_comment or '—' }}
+                            <td class="user-comment" title="{{ site_session.user_comment or '' }}">
+                                {{ site_session.user_comment or '—' }}
                             </td>
-                            <td class="time-cell">{{ session.creation_time }}</td>
-                            <td class="time-cell">{{ session.update_time or 'N/A' }}</td>
+                            <td class="time-cell">{{ site_session.creation_time }}</td>
+                            <td class="time-cell">{{ site_session.update_time or 'N/A' }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>
             </table>
         {% else %}
-            <div class="no-sessions">
-                <p>No sessions found.</p>
+            <div class="no-site-sessions">
+                <p>No site sessions found.</p>
             </div>
         {% endif %}
     </div>
 
-    <!-- Session Edit Modal -->
-    <div id="sessionModal" class="modal">
+    <!-- Site Session Edit Modal -->
+    <div id="siteSessionModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Edit Session</h2>
+                <h2>Edit Site Session</h2>
                 <span class="close">&times;</span>
             </div>
-            <form id="sessionForm">
-                <input type="hidden" id="sessionId" name="session_id">
+            <form id="siteSessionForm">
+                <input type="hidden" id="siteSessionId" name="site_session_id">
                 <div class="form-group">
-                    <label for="sessionName">Session Name</label>
-                    <input type="text" id="sessionName" name="session_name" required>
+                    <label for="siteSessionName">Site Session Name</label>
+                    <input type="text" id="siteSessionName" name="site_session_name" required>
                     <div class="error-message" id="nameError"></div>
                 </div>
                 <div class="form-group">
@@ -311,10 +311,10 @@
 {% block extra_scripts %}
 <script>
     (function() {
-        const modal = document.getElementById('sessionModal');
-        const form = document.getElementById('sessionForm');
-        const sessionIdInput = document.getElementById('sessionId');
-        const sessionNameInput = document.getElementById('sessionName');
+        const modal = document.getElementById('siteSessionModal');
+        const form = document.getElementById('siteSessionForm');
+        const siteSessionIdInput = document.getElementById('siteSessionId');
+        const siteSessionNameInput = document.getElementById('siteSessionName');
         const userCommentInput = document.getElementById('userComment');
         const closeBtn = document.querySelector('.close');
         const cancelBtn = document.getElementById('cancelBtn');
@@ -322,22 +322,18 @@
         const nameError = document.getElementById('nameError');
         const commentError = document.getElementById('commentError');
 
-        // Get all table rows with session data
-        const sessionRows = document.querySelectorAll('tbody tr[data-session-id]');
+        const siteSessionRows = document.querySelectorAll('tbody tr[data-site-session-id]');
 
-        // Open modal on row click
-        sessionRows.forEach(row => {
+        siteSessionRows.forEach(row => {
             row.addEventListener('click', function(e) {
-                // Don't open modal if clicking on a link or button
                 if (e.target.tagName === 'A' || e.target.tagName === 'BUTTON') {
                     return;
                 }
-                const sessionId = this.getAttribute('data-session-id');
-                openModal(sessionId);
+                const siteSessionId = this.getAttribute('data-site-session-id');
+                openModal(siteSessionId);
             });
         });
 
-        // Close modal handlers
         closeBtn.addEventListener('click', closeModal);
         cancelBtn.addEventListener('click', closeModal);
         window.addEventListener('click', function(e) {
@@ -346,37 +342,35 @@
             }
         });
 
-        // Open drafter button handler
         openDrafterBtn.addEventListener('click', function() {
-            const sessionId = sessionIdInput.value;
-            if (sessionId) {
-                const drafterUrl = '{{ url_for("pages.drafter") }}?session_id=' + sessionId;
+            const siteSessionId = siteSessionIdInput.value;
+            if (siteSessionId) {
+                const drafterUrl = '{{ url_for("pages.drafter") }}?site_session_id=' + siteSessionId;
                 window.location.href = drafterUrl;
             }
         });
 
-        // Form submission handler
         form.addEventListener('submit', async function(e) {
             e.preventDefault();
             clearErrors();
 
-            const sessionId = sessionIdInput.value;
-            const sessionName = sessionNameInput.value.trim();
+            const siteSessionId = siteSessionIdInput.value;
+            const siteSessionName = siteSessionNameInput.value.trim();
             const userComment = userCommentInput.value.trim();
 
-            if (!sessionName) {
-                showError(nameError, 'Session name is required');
+            if (!siteSessionName) {
+                showError(nameError, 'Site session name is required');
                 return;
             }
 
             try {
-                const response = await fetch(`/api/sessions/${sessionId}`, {
+                const response = await fetch(`/api/site_sessions/${siteSessionId}`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        session_name: sessionName,
+                        site_session_name: siteSessionName,
                         user_comment: userComment,
                     }),
                 });
@@ -384,35 +378,34 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    // Reload page to show updated data
                     window.location.reload();
                 } else {
-                    showError(nameError, data.message || 'Failed to update session');
+                    showError(nameError, data.message || 'Failed to update site session');
                 }
             } catch (error) {
-                showError(nameError, 'An error occurred while updating the session');
-                console.error('Error updating session:', error);
+                showError(nameError, 'An error occurred while updating the site session');
+                console.error('Error updating site session:', error);
             }
         });
 
-        async function openModal(sessionId) {
+        async function openModal(siteSessionId) {
             try {
-                const response = await fetch(`/api/sessions/${sessionId}`);
+                const response = await fetch(`/api/site_sessions/${siteSessionId}`);
                 const data = await response.json();
 
-                if (response.ok && data.session) {
-                    const session = data.session;
-                    sessionIdInput.value = session.id;
-                    sessionNameInput.value = session.session_name || '';
-                    userCommentInput.value = session.user_comment || '';
+                if (response.ok && data.site_session) {
+                    const siteSession = data.site_session;
+                    siteSessionIdInput.value = siteSession.id;
+                    siteSessionNameInput.value = siteSession.site_session_name || '';
+                    userCommentInput.value = siteSession.user_comment || '';
                     clearErrors();
                     modal.style.display = 'block';
                 } else {
-                    alert('Failed to load session data');
+                    alert('Failed to load site session data');
                 }
             } catch (error) {
-                alert('An error occurred while loading session data');
-                console.error('Error loading session:', error);
+                alert('An error occurred while loading site session data');
+                console.error('Error loading site session:', error);
             }
         }
 

@@ -16,6 +16,8 @@
   border-bottom: 1px solid #e5e7eb;
   background: #f9fafb;
   border-radius: 8px 8px 0 0;
+  cursor: move;
+  user-select: none;
 }
 
 .property-editor__header h3 {
@@ -31,7 +33,7 @@
   font-size: 1.5rem;
   line-height: 1;
   color: #6b7280;
-  cursor: pointer;
+  cursor: pointer !important;
   padding: 0;
   width: 24px;
   height: 24px;
@@ -106,6 +108,18 @@
   box-sizing: border-box;
   transition: border-color 0.2s, box-shadow 0.2s;
   cursor: pointer;
+}
+
+.property-editor__hint {
+  display: block;
+  font-size: 0.7rem;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+.property-editor__field--wide-input input[type="number"] {
+  min-width: 100px;
+  flex: 1;
 }
 
 .property-editor__readonly {

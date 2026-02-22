@@ -79,3 +79,50 @@
   opacity: 1;
 }
 
+/* Arc dropdown */
+.drawing-controls__arc-dropdown {
+  position: relative;
+}
+
+.drawing-btn__chevron {
+  font-size: 0.5rem;
+  line-height: 1;
+  color: #1d4ed8;
+  margin-left: 0.125rem;
+  transition: transform 0.2s ease;
+}
+
+.drawing-controls__arc-dropdown.is-open .drawing-btn__chevron {
+  transform: rotate(180deg);
+}
+
+.drawing-controls__arc-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 0.25rem;
+  min-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.25rem;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  border: 1px solid #cbd5f5;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+  z-index: 100;
+}
+
+.drawing-controls__arc-menu[hidden] {
+  display: none;
+}
+
+.drawing-controls__arc-menu-btn {
+  justify-content: center;
+  padding: 0.35rem 0.5rem;
+}
+
+.drawing-controls__arc-menu-btn .drawing-btn__icon {
+  font-size: 1rem;
+}
+

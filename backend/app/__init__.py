@@ -35,23 +35,23 @@ def create_app(config_name: str | None = None) -> Flask:
 def _register_blueprints(app: Flask) -> None:
     from backend.api.pages.routes import pages_bp
     from backend.api.uploads.routes import uploads_bp
-    from backend.api.sessions.routes import sessions_bp
+    from backend.api.site_sessions.routes import site_sessions_bp
     from backend.geometry import geometry_bp
     import backend.geometry.routes  # noqa: F401 - register routes on geometry_bp
     from backend.api.alignment import alignment_bp
 
     app.register_blueprint(pages_bp)
     app.register_blueprint(uploads_bp)
-    app.register_blueprint(sessions_bp)
+    app.register_blueprint(site_sessions_bp)
     app.register_blueprint(geometry_bp)
     app.register_blueprint(alignment_bp)
 
 
 def _ensure_instance_subdirs(app: Flask) -> None:
-    """Ensure instance directory exists. Upload directories are now created per-session."""
+    """Ensure instance directory exists. Upload directories are now created per site session."""
     instance_path = Path(app.instance_path)
     instance_path.mkdir(parents=True, exist_ok=True)
-    # Sessions directory will be created by SessionService when needed
-    sessions_dir = instance_path / "sessions_id_"
-    sessions_dir.mkdir(parents=True, exist_ok=True)
+    # Site sessions directory will be created by SiteSessionService when needed
+    site_sessions_dir = instance_path / "site_sessions_id_"
+    site_sessions_dir.mkdir(parents=True, exist_ok=True)
 

@@ -206,12 +206,12 @@ class GeometryObject(ABC):
         pass
     
     @abstractmethod
-    def delete(self, session_id: int, geometry_service: 'GeometryService', site: 'Site') -> 'Site':
+    def delete(self, site_session_id: int, geometry_service: 'GeometryService', site: 'Site') -> 'Site':
         """
         Delete this object and trigger re-save of files and updates to instance and frontend.
         
         Args:
-            session_id: Session ID
+            site_session_id: Site session ID
             geometry_service: Geometry service instance for saving
             site: Site object containing this object
             
@@ -296,16 +296,16 @@ class Point(GeometryObject):
         """Create Point from frontend JSON."""
         return cls.from_storage_json(data)
     
-    def delete(self, session_id: int, geometry_service: 'GeometryService', site: 'Site') -> 'Site':
+    def delete(self, site_session_id: int, geometry_service: 'GeometryService', site: 'Site') -> 'Site':
         """Delete this point and trigger re-save."""
         if not site.remove_point(self.id):
             raise ValueError(f"Point with id {self.id} not found in site")
         # Save with versioning
-        result = geometry_service.save_geometry(session_id, site, action="delete_point")
+        result = geometry_service.save_geometry(site_session_id, site, action="delete_point")
         if isinstance(result, Site):
             return result
         else:
-            return cast(Site, geometry_service.load_current_geometry(session_id, as_site=True))
+            return cast(Site, geometry_service.load_current_geometry(site_session_id, as_site=True))
 
 
 class Segment(GeometryObject):
@@ -390,6 +390,7 @@ class Segment(GeometryObject):
         if segment_type == 'line':
             return LineSegment.from_storage_json(data)
         elif segment_type == 'arc':
+            from backend.geometry.arc import ArcSegment
             return ArcSegment.from_storage_json(data)
         else:
             raise ValueError(f"Unknown segment type: {segment_type}")
@@ -399,7 +400,7 @@ class Segment(GeometryObject):
         """Create Segment from frontend JSON."""
         return cls.from_storage_json(data)
     
-    def delete(self, session_id: int, geometry_service: 'GeometryService', site: 'Site') -> 'Site':
+    def delete(self, site_session_id: int, geometry_service: 'GeometryService', site: 'Site') -> 'Site':
         """Delete this segment and trigger re-save."""
         # Find and remove segment from geometry
         removed = False
@@ -416,11 +417,11 @@ class Segment(GeometryObject):
             raise ValueError(f"Segment with id {self.id} not found in site")
         
         # Save with versioning
-        result = geometry_service.save_geometry(session_id, site, action="delete_segment")
+        result = geometry_service.save_geometry(site_session_id, site, action="delete_segment")
         if isinstance(result, Site):
             return result
         else:
-            return cast(Site, geometry_service.load_current_geometry(session_id, as_site=True))
+            return cast(Site, geometry_service.load_current_geometry(site_session_id, as_site=True))
 
 
 class LineSegment(Segment):
@@ -566,336 +567,6 @@ class LineSegment(Segment):
         return cls.from_storage_json(data)
 
 
-class ArcSegment(Segment):
-    """Represents an arc segment."""
-    
-    def __init__(self, start: Dict[str, float], end: Dict[str, float],
-                 center: Dict[str, float], radius: float,
-                 rotation: str = 'cw', delta: Optional[float] = None, **kwargs):
-        super().__init__('arc', start, end, **kwargs)
-        self.__center = {'x': float(center['x']), 'y': float(center['y'])}
-        self.__radius = float(radius)
-        if rotation not in ['cw', 'ccw']:
-            raise ValueError(f"Invalid rotation: {rotation}. Must be 'cw' or 'ccw'")
-        self.__rotation = rotation
-        self.__delta = float(delta) if delta is not None else None
-    
-    @property
-    def center(self) -> Dict[str, float]:
-        """Get center point coordinates."""
-        return self.__center.copy()
-    
-    @center.setter
-    def center(self, value: Dict[str, float]) -> None:
-        """Set center point coordinates."""
-        self.__center = {'x': float(value['x']), 'y': float(value['y'])}
-    
-    @property
-    def radius(self) -> float:
-        """Get arc radius."""
-        return self.__radius
-    
-    @radius.setter
-    def radius(self, value: float) -> None:
-        """Set arc radius."""
-        self.__radius = float(value)
-    
-    @property
-    def rotation(self) -> str:
-        """Get rotation direction ('cw' or 'ccw')."""
-        return self.__rotation
-    
-    @rotation.setter
-    def rotation(self, value: str) -> None:
-        """Set rotation direction ('cw' or 'ccw')."""
-        if value not in ['cw', 'ccw']:
-            raise ValueError(f"Invalid rotation: {value}. Must be 'cw' or 'ccw'")
-        self.__rotation = value
-    
-    @property
-    def delta(self) -> Optional[float]:
-        """Get arc delta angle in degrees."""
-        return self.__delta
-    
-    @delta.setter
-    def delta(self, value: Optional[float]) -> None:
-        """Set arc delta angle in degrees."""
-        self.__delta = float(value) if value is not None else None
-    
-    def to_storage_json(self) -> Dict[str, Any]:
-        """Convert to storage JSON format."""
-        result = super().to_storage_json()
-        result['center'] = self.__center.copy()
-        result['radius'] = self.__radius
-        result['rot'] = self.__rotation  # Storage uses 'rot'
-        if self.__delta is not None:
-            result['delta'] = self.__delta
-        return result
-    
-    def to_frontend_json(self) -> Dict[str, Any]:
-        """Convert to frontend JSON format."""
-        result = super().to_storage_json()
-        result['center'] = self.__center.copy()
-        result['radius'] = self.__radius
-        result['rotation'] = self.__rotation  # Frontend uses 'rotation'
-        if self.__delta is not None:
-            result['delta'] = self.__delta
-        return result
-    
-    @classmethod
-    def from_storage_json(cls, data: Dict[str, Any]) -> 'ArcSegment':
-        """Create ArcSegment from storage JSON."""
-        # Handle both 'rot' and 'rotation' keys
-        rotation = data.get('rot') or data.get('rotation', 'cw')
-        return cls(
-            id=data.get('id', str(uuid.uuid4())),
-            start=data.get('start', {'x': 0.0, 'y': 0.0}),
-            end=data.get('end', {'x': 0.0, 'y': 0.0}),
-            center=data.get('center', {'x': 0.0, 'y': 0.0}),
-            radius=data.get('radius', 0.0),
-            rotation=rotation,
-            delta=data.get('delta'),
-            length=data.get('length', 0.0),
-            layer=data.get('layer', ''),
-            attributes=data.get('attributes', {})
-        )
-    
-    @classmethod
-    def from_frontend_json(cls, data: Dict[str, Any]) -> 'ArcSegment':
-        """Create ArcSegment from frontend JSON."""
-        return cls.from_storage_json(data)
-
-    @staticmethod
-    def create_from_three_points(
-        pt1: Dict[str, float],
-        pt2: Dict[str, float],
-        pt3: Dict[str, float],
-        **kwargs: Any
-    ) -> 'ArcSegment':
-        """
-        Create an arc through three points (pt1, pt2 on arc, pt3).
-        Start of arc is pt1, end is pt3; pt2 is the middle point on the arc (not the center).
-
-        Raises:
-            ValueError: If points are collinear, any two points coincide, or radius is invalid.
-        """
-        x1, y1 = float(pt1['x']), float(pt1['y'])
-        x2, y2 = float(pt2['x']), float(pt2['y'])
-        x3, y3 = float(pt3['x']), float(pt3['y'])
-
-        # Same or duplicate points
-        if (x1, y1) == (x2, y2) or (x2, y2) == (x3, y3) or (x1, y1) == (x3, y3):
-            raise ValueError("All three points must be distinct")
-
-        # Perpendicular bisector of pt1-pt2: midpoint M1, direction V1
-        m1x = (x1 + x2) / 2.0
-        m1y = (y1 + y2) / 2.0
-        v1x = y1 - y2
-        v1y = x2 - x1
-
-        # Perpendicular bisector of pt2-pt3: midpoint M2, direction V2
-        m2x = (x2 + x3) / 2.0
-        m2y = (y2 + y3) / 2.0
-        v2x = y2 - y3
-        v2y = x3 - x2
-
-        # Intersection: M1 + t*V1 = M2 + s*V2  =>  t*(V1) - s*(V2) = M2 - M1
-        # Cross: (M2-M1) x V2 = t*(V1 x V2)  =>  t = (M2-M1)xV2 / (V1xV2)
-        denom = v1x * v2y - v1y * v2x
-        if abs(denom) < 1e-12:
-            raise ValueError("Points are collinear; cannot define a unique circle")
-
-        t = ((m2x - m1x) * v2y - (m2y - m1y) * v2x) / denom
-        cx = m1x + t * v1x
-        cy = m1y + t * v1y
-
-        radius = math.sqrt((x1 - cx) ** 2 + (y1 - cy) ** 2)
-        if not math.isfinite(radius) or radius <= 0:
-            raise ValueError("Calculated radius is not finite or is <= 0")
-
-        # Angles from center (North=0, clockwise, radians): atan2(dx, dy)
-        a1 = math.atan2(x1 - cx, y1 - cy)
-        a2 = math.atan2(x2 - cx, y2 - cy)
-        a3 = math.atan2(x3 - cx, y3 - cy)
-
-        # Normalize to [0, 2*pi)
-        def norm(a: float) -> float:
-            a = a % (2.0 * math.pi)
-            if a < 0:
-                a += 2.0 * math.pi
-            return a
-
-        a1, a2, a3 = norm(a1), norm(a2), norm(a3)
-
-        # Arc from pt1 to pt3 that contains pt2: determine cw or ccw
-        # In North=0,CW system: d_cw_span = angular distance pt1->pt3 going CW (angle increases)
-        d_cw_span = (a3 - a1 + 2.0 * math.pi) % (2.0 * math.pi)
-        d_ccw_span = (a1 - a3 + 2.0 * math.pi) % (2.0 * math.pi)
-        a2_from_pt1_cw = (a2 - a1 + 2.0 * math.pi) % (2.0 * math.pi)
-        # If pt2 lies on the CW arc from pt1 to pt3, draw CW arc
-        if 0 < a2_from_pt1_cw <= d_cw_span:
-            rotation = 'cw'
-            delta_rad = d_cw_span
-        else:
-            rotation = 'ccw'
-            delta_rad = d_ccw_span
-
-        delta_deg = math.degrees(delta_rad)
-        length = radius * delta_rad
-
-        return ArcSegment(
-            start={'x': x1, 'y': y1},
-            end={'x': x3, 'y': y3},
-            center={'x': cx, 'y': cy},
-            radius=radius,
-            rotation=rotation,
-            delta=delta_deg,
-            length=length,
-            **kwargs
-        )
-
-    @staticmethod
-    def create_from_tangent(
-        start_point: Dict[str, float],
-        tangent_direction: float,
-        radius: float,
-        length: Optional[float] = None,
-        angle: Optional[float] = None,
-        rotation: str = 'cw',
-        **kwargs: Any
-    ) -> 'ArcSegment':
-        """
-        Create an arc from a start point with given tangent direction (azimuth),
-        radius, and either arc length or arc angle.
-
-        tangent_direction: azimuth in decimal degrees 0-360 (North=0°, clockwise).
-        """
-        if (length is None) == (angle is None):
-            raise ValueError("Exactly one of length or angle must be provided")
-        if radius <= 0:
-            raise ValueError("Radius must be > 0")
-        if length is not None and length <= 0:
-            raise ValueError("Length must be > 0 when provided")
-        if angle is not None and (angle <= 0 or angle > 360):
-            raise ValueError("Angle must be > 0 and <= 360 when provided")
-        if rotation not in ('cw', 'ccw'):
-            raise ValueError("Rotation must be 'cw' or 'ccw'")
-
-        # Perpendicular to tangent: center is at radius from start in perpendicular direction
-        # cw arc: center is 90° to the right of tangent = azimuth - 90°
-        # ccw arc: center is 90° left = azimuth + 90°
-        az = float(tangent_direction) % 360
-        if rotation == 'cw':
-            perp_az = (az - 90) % 360
-        else:
-            perp_az = (az + 90) % 360
-        perp_rad = math.radians(perp_az)
-        # Unit vector (North=0, clockwise): (sin(az), cos(az)) for (x, y)
-        cx = start_point['x'] + radius * math.sin(perp_rad)
-        cy = start_point['y'] + radius * math.cos(perp_rad)
-
-        start_angle_rad = math.atan2(
-            start_point['x'] - cx,
-            start_point['y'] - cy
-        )
-        if length is not None:
-            angle_rad = length / radius
-            angle_deg = math.degrees(angle_rad)
-        else:
-            assert angle is not None
-            angle_deg = float(angle)
-            angle_rad = math.radians(angle_deg)
-
-        if rotation == 'cw':
-            end_angle_rad = start_angle_rad - angle_rad
-        else:
-            end_angle_rad = start_angle_rad + angle_rad
-
-        end_x = cx + radius * math.sin(end_angle_rad)
-        end_y = cy + radius * math.cos(end_angle_rad)
-        arc_length = radius * angle_rad
-
-        return ArcSegment(
-            start={'x': float(start_point['x']), 'y': float(start_point['y'])},
-            end={'x': end_x, 'y': end_y},
-            center={'x': cx, 'y': cy},
-            radius=radius,
-            rotation=rotation,
-            delta=angle_deg,
-            length=arc_length,
-            **kwargs
-        )
-
-    @staticmethod
-    def create_from_bearing_to_center(
-        start_point: Dict[str, float],
-        quadrant: str,
-        bearing: float,
-        radius: float,
-        length: Optional[float] = None,
-        angle: Optional[float] = None,
-        rotation: str = 'cw',
-        **kwargs: Any
-    ) -> 'ArcSegment':
-        """
-        Create an arc from a start point, direction to center (quadrant + bearing),
-        radius, and either arc length or arc angle.
-        """
-        if (length is None) == (angle is None):
-            raise ValueError("Exactly one of length or angle must be provided")
-        quadrant = quadrant.upper()
-        if quadrant not in ('NE', 'NW', 'SW', 'SE'):
-            raise ValueError("Quadrant must be NE, NW, SW, or SE")
-        if bearing < 0 or bearing > 90:
-            raise ValueError("Bearing must be in range 0-90 degrees")
-        if radius <= 0:
-            raise ValueError("Radius must be > 0")
-        if length is not None and length <= 0:
-            raise ValueError("Length must be > 0 when provided")
-        if angle is not None and (angle <= 0 or angle > 360):
-            raise ValueError("Angle must be > 0 and <= 360 when provided")
-        if rotation not in ('cw', 'ccw'):
-            raise ValueError("Rotation must be 'cw' or 'ccw'")
-
-        azimuth = bearing_to_azimuth(quadrant, bearing)
-        az_rad = math.radians(azimuth)
-        # Center is at distance radius from start_point in direction of azimuth
-        cx = start_point['x'] + radius * math.sin(az_rad)
-        cy = start_point['y'] + radius * math.cos(az_rad)
-
-        start_angle_rad = math.atan2(
-            start_point['x'] - cx,
-            start_point['y'] - cy
-        )
-        if length is not None:
-            angle_rad = length / radius
-            angle_deg = math.degrees(angle_rad)
-        else:
-            assert angle is not None
-            angle_deg = float(angle)
-            angle_rad = math.radians(angle_deg)
-
-        if rotation == 'cw':
-            end_angle_rad = start_angle_rad - angle_rad
-        else:
-            end_angle_rad = start_angle_rad + angle_rad
-
-        end_x = cx + radius * math.sin(end_angle_rad)
-        end_y = cy + radius * math.cos(end_angle_rad)
-        arc_length = radius * angle_rad
-
-        return ArcSegment(
-            start={'x': float(start_point['x']), 'y': float(start_point['y'])},
-            end={'x': end_x, 'y': end_y},
-            center={'x': cx, 'y': cy},
-            radius=radius,
-            rotation=rotation,
-            delta=angle_deg,
-            length=arc_length,
-            **kwargs
-        )
-
-
 class Geometry(GeometryObject):
     """Represents a geometry object containing segments."""
     
@@ -938,16 +609,18 @@ class Geometry(GeometryObject):
     
     def remove_segment(self, segment_id: str) -> bool:
         """Remove a segment by ID. Returns True if removed."""
+        segment_id_str = str(segment_id)
         for i, seg in enumerate(self.__segments):
-            if seg.id == segment_id:
+            if str(seg.id) == segment_id_str:
                 self.__segments.pop(i)
                 return True
         return False
     
     def get_segment(self, segment_id: str) -> Optional[Segment]:
         """Get a segment by ID."""
+        segment_id_str = str(segment_id)
         for seg in self.__segments:
-            if seg.id == segment_id:
+            if str(seg.id) == segment_id_str:
                 return seg
         return None
     
@@ -988,7 +661,7 @@ class Geometry(GeometryObject):
         """Create Geometry from frontend JSON."""
         return cls.from_storage_json(data)
     
-    def delete(self, session_id: int, geometry_service: 'GeometryService', site: 'Site') -> 'Site':
+    def delete(self, site_session_id: int, geometry_service: 'GeometryService', site: 'Site') -> 'Site':
         """Delete this geometry and trigger re-save."""
         # Find and remove geometry from parcel
         removed = False
@@ -1005,11 +678,11 @@ class Geometry(GeometryObject):
             raise ValueError(f"Geometry with id {self.id} not found in site")
         
         # Save with versioning
-        result = geometry_service.save_geometry(session_id, site, action="delete_geometry")
+        result = geometry_service.save_geometry(site_session_id, site, action="delete_geometry")
         if isinstance(result, Site):
             return result
         else:
-            return cast(Site, geometry_service.load_current_geometry(session_id, as_site=True))
+            return cast(Site, geometry_service.load_current_geometry(site_session_id, as_site=True))
 
 
 class Parcel(GeometryObject):
@@ -1147,7 +820,7 @@ class Parcel(GeometryObject):
             attributes=data.get('attributes', {})
         )
     
-    def delete(self, session_id: int, geometry_service: 'GeometryService', site: 'Site') -> 'Site':
+    def delete(self, site_session_id: int, geometry_service: 'GeometryService', site: 'Site') -> 'Site':
         """Delete this parcel and trigger re-save."""
         # Find and remove parcel from layer
         removed = False
@@ -1160,11 +833,11 @@ class Parcel(GeometryObject):
             raise ValueError(f"Parcel with id {self.id} not found in site")
         
         # Save with versioning
-        result = geometry_service.save_geometry(session_id, site, action="delete_parcel")
+        result = geometry_service.save_geometry(site_session_id, site, action="delete_parcel")
         if isinstance(result, Site):
             return result
         else:
-            return cast(Site, geometry_service.load_current_geometry(session_id, as_site=True))
+            return cast(Site, geometry_service.load_current_geometry(site_session_id, as_site=True))
 
 
 class GeometryLayer(GeometryObject):
@@ -1295,17 +968,17 @@ class GeometryLayer(GeometryObject):
             layer.add_parcel(parcel)
         return layer
     
-    def delete(self, session_id: int, geometry_service: 'GeometryService', site: 'Site') -> 'Site':
+    def delete(self, site_session_id: int, geometry_service: 'GeometryService', site: 'Site') -> 'Site':
         """Delete this geometry layer and trigger re-save."""
         if not site.remove_geometry_layer(self.id):
             raise ValueError(f"GeometryLayer with id {self.id} not found in site")
         
         # Save with versioning
-        result = geometry_service.save_geometry(session_id, site, action="delete_geometry_layer")
+        result = geometry_service.save_geometry(site_session_id, site, action="delete_geometry_layer")
         if isinstance(result, Site):
             return result
         else:
-            return cast(Site, geometry_service.load_current_geometry(session_id, as_site=True))
+            return cast(Site, geometry_service.load_current_geometry(site_session_id, as_site=True))
 
 
 class Site(GeometryObject):
@@ -1324,9 +997,9 @@ class Site(GeometryObject):
         })
         self.__geometry_layers: List[GeometryLayer] = []
         self.__metadata = kwargs.get('metadata', {})
-        # For session-based geometry: store points and segments directly
+        # For site-session-based geometry: store points and segments directly
         self.__points: List[Point] = []
-        self.__session_id = kwargs.get('sessionId')
+        self.__site_session_id = kwargs.get('siteSessionId')
     
     @property
     def project_id(self) -> str:
@@ -1404,16 +1077,16 @@ class Site(GeometryObject):
                 return layer
         return None
     
-    # Session-based geometry support (for backward compatibility)
+    # Site-session-based geometry support
     @property
-    def session_id(self) -> Optional[int]:
-        """Get session ID (for session-based geometry)."""
-        return self.__session_id
-    
-    @session_id.setter
-    def session_id(self, value: Optional[int]) -> None:
-        """Set session ID."""
-        self.__session_id = value
+    def site_session_id(self) -> Optional[int]:
+        """Get site session ID (for site-session-based geometry)."""
+        return self.__site_session_id
+
+    @site_session_id.setter
+    def site_session_id(self, value: Optional[int]) -> None:
+        """Set site session ID."""
+        self.__site_session_id = value
     
     @property
     def points(self) -> List[Point]:
@@ -1453,10 +1126,11 @@ class Site(GeometryObject):
     
     def get_segment_by_id(self, segment_id: str) -> Optional[Segment]:
         """Find a segment by ID across all geometry layers."""
+        segment_id_str = str(segment_id)
         for layer in self.__geometry_layers:
             for parcel in layer.parcels:
                 if parcel.geometry:
-                    segment = parcel.geometry.get_segment(segment_id)
+                    segment = parcel.geometry.get_segment(segment_id_str)
                     if segment:
                         return segment
         return None
@@ -1473,9 +1147,9 @@ class Site(GeometryObject):
             'metadata': self.__metadata,
             'attributes': self.attributes
         }
-        # Include session-based points and segments for backward compatibility
-        if self.__session_id is not None:
-            result['sessionId'] = self.__session_id
+        # Include site-session-based points and segments
+        if self.__site_session_id is not None:
+            result['siteSessionId'] = self.__site_session_id
             result['points'] = [point.to_storage_json() for point in self.__points]
             # Extract segments from geometry layers for session-based format
             segments = []
@@ -1519,7 +1193,7 @@ class Site(GeometryObject):
             }),
             metadata=data.get('metadata', {}),
             attributes=data.get('attributes', {}),
-            sessionId=data.get('sessionId')
+            siteSessionId=data.get('siteSessionId')
         )
         
         # Load geometry layers
@@ -1589,7 +1263,7 @@ class Site(GeometryObject):
             name=data.get('metadata', {}).get('project', ''),
             metadata=data.get('metadata', {}),
             attributes=data.get('attributes', {}),
-            sessionId=data.get('sessionId')
+            siteSessionId=data.get('siteSessionId')
         )
         
         # Load collections (new format)
@@ -1631,7 +1305,7 @@ class Site(GeometryObject):
         
         return site
     
-    def delete(self, session_id: int, geometry_service: 'GeometryService', site: 'Site') -> 'Site':
+    def delete(self, site_session_id: int, geometry_service: 'GeometryService', site: 'Site') -> 'Site':
         """
         Delete this site (clear all data) and trigger re-save.
         
@@ -1649,9 +1323,9 @@ class Site(GeometryObject):
             self.remove_point(point_id)
         
         # Save with versioning
-        result = geometry_service.save_geometry(session_id, self, action="delete_site")
+        result = geometry_service.save_geometry(site_session_id, self, action="delete_site")
         if isinstance(result, Site):
             return result
         else:
-            return cast(Site, geometry_service.load_current_geometry(session_id, as_site=True))
+            return cast(Site, geometry_service.load_current_geometry(site_session_id, as_site=True))
 
