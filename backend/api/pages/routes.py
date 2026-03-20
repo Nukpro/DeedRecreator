@@ -91,6 +91,17 @@ def drafter():
                         f"Failed to generate URL for processed_drawing in site session {site_session_id}: {e}",
                         exc_info=True,
                     )
+
+            # Remove non-JSON-serializable ProcessedImage; deliver alignment to frontend from class
+            processed_image = site_session_data.pop("processed_image", None)
+            if processed_image is not None:
+                try:
+                    alignment_data = processed_image.load_alignment()
+                    if "paths" not in site_session_data:
+                        site_session_data["paths"] = {}
+                    site_session_data["paths"]["alignment"] = alignment_data
+                except FileNotFoundError:
+                    pass
         except SiteSessionNotFoundError:
             pass
 

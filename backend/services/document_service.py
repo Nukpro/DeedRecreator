@@ -11,11 +11,7 @@ from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
 from backend.domain.documents import StoredDocument
-from backend.services.image_utils import (
-    default_boundary_box,
-    encode_png,
-    save_alignment_json,
-)
+from backend.services.image_utils import ProcessedImage
 from backend.services.pdf_converter import (
     PDFConversionError,
     PNG_EXPORT_DPI,
@@ -155,7 +151,7 @@ class DocumentService:
             )
 
         if boundary_box is None and image_width is not None and image_height is not None:
-            boundary_box = default_boundary_box(image_width, image_height)
+            boundary_box = ProcessedImage.default_boundary_box(image_width, image_height)
 
         # Create alignment.json file after saving processed image
         if image_width is not None and image_height is not None and boundary_box:
@@ -187,7 +183,7 @@ class DocumentService:
             }
 
             try:
-                save_alignment_json(alignment_data, alignment_path)
+                ProcessedImage.save_alignment_to_path(alignment_data, alignment_path)
             except Exception as e:
                 # Log error but don't fail the upload
                 try:
@@ -258,7 +254,7 @@ class DocumentService:
 
         try:
             with Image.open(io.BytesIO(raw_bytes)) as image:
-                return encode_png(image, PNG_EXPORT_DPI)
+                return ProcessedImage.encode_png(image, PNG_EXPORT_DPI)
         except (OSError, ValueError) as error:
             raise DocumentStorageError("Failed to convert document to PNG.") from error
 

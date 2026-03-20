@@ -98,8 +98,41 @@ export async function moveCenter(siteSessionId, segmentId, center) {
   throw new Error("Arc move center is not implemented yet.");
 }
 
-/** Update arc by three points (backend not implemented yet). */
+/**
+ * Update existing arc by three points.
+ * Backend uses ArcSegment.create_from_three_points() under the hood and
+ * replaces the existing arc segment while keeping its ID and layer.
+ *
+ * @param {number} siteSessionId
+ * @param {string} segmentId
+ * @param {{ x: number, y: number }} pt1
+ * @param {{ x: number, y: number }} pt2
+ * @param {{ x: number, y: number }} pt3
+ * @param {{ attributes?: object, rotation?: 'cw'|'ccw' }=} opts - optional extra data (rotation is currently ignored by backend)
+ * @returns {Promise<{ success: boolean, version: number, arc: object }>}
+ */
 export async function updateFromThreePoints(siteSessionId, segmentId, pt1, pt2, pt3, opts = {}) {
-  throw new Error("Arc update from three points is not implemented yet.");
+  const body = {
+    pt1: { x: pt1.x, y: pt1.y },
+    pt2: { x: pt2.x, y: pt2.y },
+    pt3: { x: pt3.x, y: pt3.y }
+  };
+  if (opts.attributes != null) {
+    body.attributes = opts.attributes;
+  }
+  // `rotation` is passed through for possible future use, but currently ignored by backend
+  if (opts.rotation != null) {
+    body.rotation = opts.rotation;
+  }
+
+  const response = await fetch(`${BASE}/${siteSessionId}/arc/${segmentId}/from-three-points`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response));
+  }
+  return response.json();
 }
 

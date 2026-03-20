@@ -8,6 +8,8 @@ from typing import Optional
 
 from flask import current_app
 
+from backend.services.image_utils import ProcessedImage
+
 
 class SiteSessionError(Exception):
     """Base exception raised for site session management issues."""
@@ -134,6 +136,12 @@ class SiteSessionService:
         catalog_name = site_session["storage_catalog_name"]
         site_session_dir = self._site_sessions_dir / catalog_name
 
+        processed_image = None
+        if site_session.get("processed_drawing"):
+            image_path = site_session_dir / site_session["processed_drawing"]
+            alignment_path = image_path.parent / f"{image_path.stem}.alignment.json"
+            processed_image = ProcessedImage(image_path, alignment_path)
+
         result = {
             **site_session,
             "paths": {
@@ -150,6 +158,8 @@ class SiteSessionService:
                 "site_session_dir": str(site_session_dir),
             },
         }
+        if processed_image is not None:
+            result["processed_image"] = processed_image
 
         return result
 

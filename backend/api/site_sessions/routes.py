@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from flask import Blueprint, current_app, jsonify, request
+from pathlib import Path
+
+from flask import Blueprint, current_app, jsonify, request, url_for
 
 from backend.app.container import get_site_session_service
 from backend.services.site_session_service import (
@@ -72,10 +74,34 @@ def update_site_session(site_session_id: int):
 
 @site_sessions_bp.post("/api/site_sessions/<int:site_session_id>/activate")
 def activate_site_session(site_session_id: int):
-    """Activate a site session and return paths for drafter."""
+    """Activate a site session and return paths, image URL and alignment for drafter."""
     service = get_site_session_service()
     try:
         site_session_data = service.activate_site_session(site_session_id)
+
+        # Remove non-JSON-serializable ProcessedImage; deliver image URL and alignment from class
+        processed_image = site_session_data.pop("processed_image", None)
+        if site_session_data.get("processed_drawing"):
+            if "paths" not in site_session_data:
+                site_session_data["paths"] = {}
+            filename = Path(site_session_data["processed_drawing"]).name
+            try:
+                site_session_data["paths"]["processed_drawing_url"] = url_for(
+                    "uploads.serve_uploaded_file",
+                    site_session_id=site_session_id,
+                    filename=filename,
+                )
+            except Exception:
+                pass
+        if processed_image is not None:
+            try:
+                alignment_data = processed_image.load_alignment()
+                if "paths" not in site_session_data:
+                    site_session_data["paths"] = {}
+                site_session_data["paths"]["alignment"] = alignment_data
+            except FileNotFoundError:
+                pass
+
         return (
             jsonify(
                 {

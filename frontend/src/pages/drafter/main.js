@@ -1005,39 +1005,45 @@ async function displayRasterPreview(imageUrl, statusElement, metadata = {}) {
         boundaryBox,
         size
       });
-      
-      // Load alignment.json after setting raster source
-      try {
-        const getSiteSessionId = () => {
-          if (window.siteSessionData && window.siteSessionData.id) {
-            return window.siteSessionData.id;
-          }
-          const urlParams = new URLSearchParams(window.location.search);
-          const siteSessionId = urlParams.get("site_session_id");
-          return siteSessionId ? parseInt(siteSessionId, 10) : null;
-        };
-        
-        const siteSessionId = getSiteSessionId();
-        if (siteSessionId) {
-          const { nameWithoutExt } = extractImageFilename(imageUrl);
-          const alignmentUrl = `/api/alignment/${siteSessionId}/${nameWithoutExt}.png`;
-          
-          const alignmentResponse = await fetch(alignmentUrl);
-          if (alignmentResponse.ok) {
-            const alignmentData = await alignmentResponse.json();
-            if (geometryViewer && typeof geometryViewer.setImageAlignment === "function") {
-              geometryViewer.setImageAlignment(alignmentData);
+
+      // Use alignment from class (initial payload or metadata), else fetch from API
+      const preloadedAlignment =
+        metadata?.alignment ??
+        (window.siteSessionData?.paths?.alignment || null);
+
+      if (preloadedAlignment && typeof geometryViewer.setImageAlignment === "function") {
+        geometryViewer.setImageAlignment(preloadedAlignment);
+      } else {
+        try {
+          const getSiteSessionId = () => {
+            if (window.siteSessionData && window.siteSessionData.id) {
+              return window.siteSessionData.id;
             }
-          } else if (alignmentResponse.status === 404) {
-            // Alignment file doesn't exist yet, use default (no rotation, default boundary box)
-            console.log("Alignment file not found, using defaults");
-          } else {
-            console.warn("Failed to load alignment:", alignmentResponse.status);
+            const urlParams = new URLSearchParams(window.location.search);
+            const siteSessionId = urlParams.get("site_session_id");
+            return siteSessionId ? parseInt(siteSessionId, 10) : null;
+          };
+
+          const siteSessionId = getSiteSessionId();
+          if (siteSessionId) {
+            const { nameWithoutExt } = extractImageFilename(imageUrl);
+            const alignmentUrl = `/api/alignment/${siteSessionId}/${nameWithoutExt}.png`;
+
+            const alignmentResponse = await fetch(alignmentUrl);
+            if (alignmentResponse.ok) {
+              const alignmentData = await alignmentResponse.json();
+              if (geometryViewer && typeof geometryViewer.setImageAlignment === "function") {
+                geometryViewer.setImageAlignment(alignmentData);
+              }
+            } else if (alignmentResponse.status === 404) {
+              console.log("Alignment file not found, using defaults");
+            } else {
+              console.warn("Failed to load alignment:", alignmentResponse.status);
+            }
           }
+        } catch (alignmentError) {
+          console.warn("Error loading alignment.json:", alignmentError);
         }
-      } catch (alignmentError) {
-        console.warn("Error loading alignment.json:", alignmentError);
-        // Continue with default display
       }
     }
   } catch (error) {

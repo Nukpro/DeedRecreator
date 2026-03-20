@@ -14,7 +14,7 @@ try:
 except ImportError:  # pragma: no cover
     Image = None  # type: ignore[assignment]
 
-from backend.services.image_utils import encode_png
+from backend.services.image_utils import ProcessedImage
 
 PNG_EXPORT_DPI: Final[int] = 300
 
@@ -49,7 +49,7 @@ def pdf_to_png(raw_bytes: bytes, dpi: int = PNG_EXPORT_DPI) -> PDFConversionResu
             total_frames = getattr(pdf_image, "n_frames", 1)
             pdf_image.seek(0)
             pixel_width, pixel_height = pdf_image.size
-            png_bytes = encode_png(pdf_image, dpi)
+            png_bytes = ProcessedImage.encode_png(pdf_image, dpi)
             width_points = float(pixel_width) * 72.0 / float(dpi)
             height_points = float(pixel_height) * 72.0 / float(dpi)
             page_bbox = (0.0, 0.0, width_points, height_points)
@@ -78,11 +78,11 @@ def _pdfium_to_png(raw_bytes: bytes, dpi: int) -> PDFConversionResult:
                 raise PDFConversionError("Provided PDF has no pages.")
 
             page = pdf[0]
-            scale = dpi / 72.0
+            scale = round(dpi / 72.0)
             bitmap = page.render(scale=scale)
             pil_image = bitmap.to_pil()
             pixel_width, pixel_height = pil_image.size
-            png_bytes = encode_png(pil_image, dpi)
+            png_bytes = ProcessedImage.encode_png(pil_image, dpi)
             had_multiple_pages = len(pdf) > 1
             bbox = page.get_bbox()
             page_bbox = (
